@@ -1,0 +1,7 @@
+node_modules/
+.next/
+infra/dist/
+output/
+test-results/
+package-lock.json
+prisma/migrations/

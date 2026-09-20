@@ -9,5 +9,8 @@ for (const name of ['pdf-parse', 'node-ensure', 'debug', 'ms']) {
   const source = path.dirname(require.resolve(`${name}/package.json`));
   await cp(source, path.join(destination, name), { recursive: true });
 }
-await writeFile('infra/dist/package.json', JSON.stringify({ name: 'echo-lambda', version: '1.0.0', private: true, type: 'commonjs' }, null, 2));
+await writeFile(
+  'infra/dist/package.json',
+  JSON.stringify({ name: 'echo-lambda', version: '1.0.0', private: true, type: 'commonjs' }, null, 2),
+);
 console.log('Lambda bundle prepared in infra/dist. Deploy with AWS CDK.');

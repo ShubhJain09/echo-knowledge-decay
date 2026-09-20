@@ -1,66 +1,1527 @@
 'use client';
-import { useCallback,useEffect,useState,type FormEvent,type ReactNode } from 'react';
-import { usePathname,useRouter } from 'next/navigation';
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { Activity,ArrowDownToLine,ArrowRight,ArrowUpRight,BookOpen,Check,ChevronRight,Clock,FileText,FolderOpen,GitBranch,History,LayoutDashboard,LoaderCircle,LogOut,MessageSquare,Plus,Search,Settings,ShieldCheck,Upload,Users,X } from 'lucide-react';
-import type { Answer,Card,Evidence,Review,Snapshot } from '@/lib/types';
+import {
+  Activity,
+  ArrowDownToLine,
+  ArrowRight,
+  ArrowUpRight,
+  BookOpen,
+  Check,
+  ChevronRight,
+  Clock,
+  FileText,
+  FolderOpen,
+  GitBranch,
+  History,
+  LayoutDashboard,
+  LoaderCircle,
+  LogOut,
+  MessageSquare,
+  Plus,
+  Search,
+  Settings,
+  ShieldCheck,
+  Upload,
+  Users,
+  X,
+} from 'lucide-react';
+import type { Answer, Card, Evidence, Review, Snapshot } from '@/lib/types';
 import { can } from '@/lib/auth/rbac';
 import { freshness } from '@/lib/intelligence/freshness';
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
-const sample='The payment deployment pipeline now automatically restarts Service X after every successful deployment. Engineers no longer need to restart Service X manually. If the automated restart fails, follow the incident response runbook.';
-const date=(v:string)=>new Date(v).toLocaleDateString('en',{month:'short',day:'numeric',year:'numeric'});
-const relation=(v:string)=>v.replaceAll('_',' ');
-export async function api<T>(path:string,body?:unknown):Promise<T>{const r=await fetch(`/api/${path}`,{method:body===undefined?'GET':'POST',headers:body===undefined?undefined:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json();if(r.status===401){location.href='/login';throw new Error('Sign in to continue.');}if(!r.ok)throw new Error(data.error||'The request failed.');return data;}
-function Badge({children,kind='neutral'}:{children:ReactNode;kind?:string}){return <span className={`badge ${kind}`}>{children}</span>;}
-function Empty({title,children}:{title:string;children:ReactNode}){return <div className="empty"><GitBranch size={28}/><h3>{title}</h3><p>{children}</p></div>;}
-export default function Workspace(){
-  const pathname=usePathname();const router=useRouter();const parts=pathname.split('/').filter(Boolean);const view=parts[0]||'dashboard';const selected=parts[1];
-  const [data,setData]=useState<Snapshot>();const [error,setError]=useState('');const [notice,setNotice]=useState('');const [busy,setBusy]=useState(false);const [query,setQuery]=useState('');const [status,setStatus]=useState('all');const [topic,setTopic]=useState('all');const [owner,setOwner]=useState('all');const [risk,setRisk]=useState('all');
-  const [modal,setModal]=useState<'evidence'|'card'|'rollback'|null>(null);const [cardId,setCardId]=useState('payment-deployment');const [sourceName,setSourceName]=useState('deployment-update-groq.txt');const [evidenceText,setEvidenceText]=useState('');const [file,setFile]=useState<File|null>(null);const [reviewId,setReviewId]=useState('');const [statement,setStatement]=useState('');const [reason,setReason]=useState('');const [decision,setDecision]=useState('update');const [question,setQuestion]=useState('');const [answer,setAnswer]=useState<Answer>();const [rollbackVersion,setRollbackVersion]=useState(1);const [inviteUrl,setInviteUrl]=useState('');
-  const refresh=useCallback(async()=>{const d=await api<Snapshot>('workspace');setData(d);return d;},[]);
-  useEffect(()=>{refresh().catch(e=>setError(e.message));},[refresh]);
-  useEffect(()=>{setQuery('');setStatus('all');setTopic('all');setOwner('all');setRisk('all');},[pathname]);
-  useEffect(()=>{if(notice){const t=setTimeout(()=>setNotice(''),6000);return()=>clearTimeout(t);}},[notice]);
-  const go=(path:string)=>router.push(path);
-  async function run(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
-  const cards=data?.cards||[];const allPending=data?.reviews.filter(r=>r.status==='pending'&&cards.some(c=>c.id===r.cardId&&c.version===r.cardVersion&&c.status==='verified'))||[];
-  const pending=allPending.filter(r=>!r.snoozedUntil||Date.parse(r.snoozedUntil)<=Date.now());const active=cards.filter(c=>c.status==='verified');const card=cards.find(c=>c.id===selected)||cards[0];const review=pending.find(r=>r.id===reviewId)||pending[0];const reviewCard=cards.find(c=>c.id===review?.cardId);
-  useEffect(()=>{setStatement(review?.proposedStatement||'');setReason('');setDecision('update');},[review?.id]);
-  const allowed=(p:Parameters<typeof can>[1])=>data?can(data.user.role,p):false;
-  const mutate=async(path:string,body:unknown,message:string)=>{await api(path,body);await refresh();setNotice(message);};
-  const compare=async(e:Evidence)=>{const r=await api<Review>(`evidence/${e.id}/compare`,{});await refresh();setModal(null);if(r.status==='pending'){setReviewId(r.id);go('/review');}else setNotice(`${relation(r.relation)}. No new review is needed.`);};
-  async function upload(e:FormEvent){e.preventDefault();await run(async()=>{let content=evidenceText;let encoding='text';let name=sourceName;if(file){if(file.size>2*1024*1024)throw new Error('Files must be smaller than 2 MB.');content=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=()=>reject(new Error('Unable to read file.'));r.readAsDataURL(file);});encoding='base64';name=file.name;}
-    const evidence=await api<Evidence&{duplicate?:boolean}>('evidence',{cardId,name,content,encoding});await refresh();if(evidence.duplicate)setNotice('Already ingested. Reusing the original evidence.');try{await compare(evidence);}catch(e){setModal(null);go('/evidence');throw new Error(`Evidence saved. ${(e as Error).message}`);}setFile(null);setEvidenceText('');});}
-  async function decide(e?:FormEvent){e?.preventDefault();if(!review||busy)return;if(!reason.trim()){setError('Add a reason explaining what you verified.');return;}await run(async()=>{await mutate(`reviews/${review.id}/decision`,{decision,expectedVersion:review.cardVersion,note:reason,...(decision==='update'?{statement}:{})},'Decision saved. The full history is preserved.');setAnswer(undefined);go(`/knowledge/${review.cardId}`);});}
-  useEffect(()=>{if(view!=='review')return;const listener=(e:KeyboardEvent)=>{if(e.target instanceof HTMLElement&&['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName))return;const index=pending.findIndex(r=>r.id===review?.id);if(e.key==='j')setReviewId(pending[Math.min(index+1,pending.length-1)]?.id||'');if(e.key==='k')setReviewId(pending[Math.max(index-1,0)]?.id||'');if(e.key==='a')setDecision('update');if(e.key==='r')setDecision('keep');if(e.key==='e')go('/evidence');if(e.key==='s'&&review&&allowed('review'))run(()=>mutate(`reviews/${review.id}/manage`,{snoozedUntil:new Date(Date.now()+86400000).toISOString()},'Review snoozed for one day.'));};window.addEventListener('keydown',listener);return()=>window.removeEventListener('keydown',listener);});
-  const title:Record<string,string>={dashboard:'Your knowledge, in focus.',knowledge:selected?'Knowledge detail':'Knowledge base',review:'Changes worth a closer look.',evidence:'The evidence behind every change.',ask:'Ask your current knowledge.',settings:'Workspace settings',audit:'Every decision leaves a trace.',history:'Version history'};
-  const subtitle:Record<string,string>={dashboard:'A clear view of what is trusted, what changed, and what needs you.',knowledge:'Verified procedures with their sources and complete history.',review:'The evidence suggests a change. You decide what becomes current.',evidence:'Original sources, preserved exactly as they were submitted.',ask:'Cited excerpts from current, verified knowledge only.',settings:'Manage your account, organization, and access.',audit:'Trace changes to the person, source, and version behind them.',history:'Nothing disappears when knowledge evolves.'};
-  const nav=[['dashboard','Overview',LayoutDashboard],['knowledge','Knowledge',BookOpen],['review','Review queue',GitBranch],['evidence','Evidence library',FolderOpen],['ask','Ask Echo',MessageSquare]] as const;
-  const stale=active.filter(c=>freshness(c.lastVerifiedAt,c.nextReviewAt).overdue);
-  return <div className="app-shell"><aside className="sidebar"><a className="brand" href="/dashboard"><GitBranch size={29}/>echo<span>.</span></a><div className="workspace-label"><span className="workspace-icon">{data?.organization.name.slice(0,1)||'E'}</span><div><strong>{data?.organization.name||'Your workspace'}</strong><small>{data?.user.role||'Knowledge workspace'}</small></div></div><span className="nav-heading">WORKSPACE</span><nav aria-label="Main navigation">{nav.map(([id,label,Icon])=><a key={id} href={`/${id}`} className={view===id?'active':''}><Icon size={19}/><span>{label}</span>{id==='review'&&pending.length>0&&<b>{pending.length}</b>}</a>)}</nav><div className="sidebar-bottom"><p className="principle"><ShieldCheck size={18}/>AI proposes.<br/>Humans verify.</p><nav><a href="/settings/profile" className={view==='settings'?'active':''}><Settings size={18}/><span>Settings</span></a>{allowed('audit')&&<a href="/audit" className={view==='audit'?'active':''}><Activity size={18}/><span>Audit trail</span></a>}</nav><div className="user-row"><span className="avatar">{data?.user.name.slice(0,2).toUpperCase()||'—'}</span><div><strong>{data?.user.name}</strong><small>{data?.user.role}</small></div><button className="icon-button" aria-label="Sign out" onClick={()=>signOut({callbackUrl:'/login'})}><LogOut size={17}/></button></div></div></aside>
-  <div className="main-shell"><header className="topbar"><span>Workspace <ChevronRight size={14}/><strong>{nav.find(n=>n[0]===view)?.[1]||view}</strong></span><Badge kind="green"><ShieldCheck size={13}/>Human verification</Badge></header><main className="main-content"><div className="page-heading"><div><p className="eyebrow">ECHO / {view.toUpperCase()}</p><h1>{title[view]||'Page not found'}</h1><p className="subtitle">{subtitle[view]}</p></div>{allowed('ingest')&&active.length>0&&<Button onClick={()=>{setCardId(card?.id||active[0].id);setModal('evidence');}}><Plus size={17}/>Add evidence</Button>}</div>
-  {error&&<div className="error" role="alert">{error}<button className="icon-button" aria-label="Dismiss error" onClick={()=>setError('')}><X size={17}/></button></div>}
-  {!data?<div className="loading"><LoaderCircle className="spin"/>Loading workspace…</div>:<>
-  {view==='dashboard'&&<><section className="stats"><Stat label="Current knowledge" value={active.length} detail={`${cards.length} total cards`} icon={<BookOpen/>}/><Stat label="Awaiting review" value={pending.length} detail={`${pending.filter(r=>r.priority==='high').length} high-priority changes`} icon={<GitBranch/>} accent/><Stat label="Due for verification" value={stale.length} detail="Based on scheduled review dates" icon={<Clock/>}/><Stat label="Evidence captured" value={data.evidence.length} detail="Original sources preserved" icon={<FileText/>}/></section><div className="dashboard-grid"><section className="panel"><div className="section-heading"><h2>Your attention matters</h2><a href="/review">Open queue <ArrowUpRight size={16}/></a></div>{pending.length?pending.slice(0,4).map(r=><button className="attention-row" key={r.id} onClick={()=>{setReviewId(r.id);go('/review');}}><span className="row-icon"><GitBranch size={20}/></span><div><strong>{cards.find(c=>c.id===r.cardId)?.title}</strong><small>{relation(r.relation)} · {r.evidenceName}</small></div><Badge kind="amber">{r.priority}</Badge><ArrowRight size={17}/></button>):<Empty title="No open changes">New evidence will appear here when it needs human review.</Empty>}<div className="panel-footer"><ShieldCheck size={15}/>Nothing becomes current without a human decision.</div></section><section className="panel health-panel"><div className="section-heading"><h2>Knowledge health</h2><Activity size={19}/></div><div className="health-number">{active.length?Math.round((active.length-stale.length)/active.length*100):0}<span>%</span></div><p>Within the scheduled review period</p><div className="health-bar"><span style={{width:`${active.length?(active.length-stale.length)/active.length*100:0}%`}}/></div><div className="health-legend"><span><i/>{active.length-stale.length} on schedule</span><span>{stale.length} due</span></div>{allowed('review')&&<Button variant="secondary" disabled={busy} onClick={()=>run(()=>mutate('freshness',{},'Freshness checks complete. Due items are in the review queue.'))}>Check review dates <ArrowRight size={15}/></Button>}</section></div>
-  <div className="dashboard-grid lower"><section className="panel"><div className="section-heading"><h2>Recent knowledge</h2><a href="/knowledge">View all <ArrowUpRight size={16}/></a></div>{cards.slice(0,4).map(c=><CardRow key={c.id} card={c} pending={pending.some(r=>r.cardId===c.id)}/>)}{!cards.length&&<Empty title="Start with something your team knows">Create a verified knowledge card or load the Service X example.</Empty>}</section><section className="panel"><div className="section-heading"><h2>Activity</h2><History size={18}/></div>{data.audit.slice(-5).reverse().map(e=><div className="activity-row" key={e.id}><span className="timeline-dot"/><div><strong>{relation(e.action.replaceAll('.','_'))}</strong><small>{e.actorName} · {date(e.timestamp)}</small></div></div>)}{!data.audit.length&&<Empty title="Your history starts here">Review decisions and changes become part of your audit trail.</Empty>}</section></div>{allowed('admin')&&!cards.length&&<div className="demo-banner"><div><h3>Meet Service X</h3><p>Follow a manual deployment step as it becomes automated, with human review at the center.</p></div><Button disabled={busy} onClick={()=>run(()=>mutate('seed',{},'The Service X example is ready.'))}>Load example workspace <ArrowRight size={16}/></Button></div>}</>}
-  {view==='knowledge'&&!selected&&<><div className="toolbar"><label className="search"><Search size={18}/><input aria-label="Search knowledge" placeholder="Search title, procedure, or source…" value={query} onChange={e=>setQuery(e.target.value)}/></label><select aria-label="Status filter" value={status} onChange={e=>setStatus(e.target.value)}><option value="all">All statuses</option><option value="verified">Verified</option><option value="review">Needs review</option><option value="archived">Archived</option></select><select aria-label="Topic filter" value={topic} onChange={e=>setTopic(e.target.value)}><option value="all">All topics</option>{[...new Set(cards.map(c=>c.topic))].map(t=><option key={t}>{t}</option>)}</select><select aria-label="Owner filter" value={owner} onChange={e=>setOwner(e.target.value)}><option value="all">All owners</option>{[...new Set(cards.map(c=>c.owner))].map(t=><option key={t}>{t}</option>)}</select><select aria-label="Review schedule filter" value={risk} onChange={e=>setRisk(e.target.value)}><option value="all">All review dates</option><option value="due">Due for review</option></select>{allowed('create')&&<Button onClick={()=>setModal('card')}><Plus size={16}/>New card</Button>}</div><section className="panel"><div className="table-heading"><span>KNOWLEDGE / OWNER</span><span>STATUS / VERSION</span></div>{cards.filter(c=>(`${c.title} ${c.statement} ${c.source}`.toLowerCase().includes(query.toLowerCase()))&&(status==='all'||status===c.status||(status==='review'&&pending.some(r=>r.cardId===c.id)))&&(topic==='all'||topic===c.topic)&&(owner==='all'||owner===c.owner)&&(risk==='all'||freshness(c.lastVerifiedAt,c.nextReviewAt).overdue)).map(c=><CardRow key={c.id} card={c} pending={pending.some(r=>r.cardId===c.id)}/>)}{!cards.length&&<Empty title="No knowledge yet">Create your first verified card, or load the example on Overview.</Empty>}</section></>}
-  {(view==='knowledge'&&selected||view==='history')&&card&&<div className="detail-layout"><div><section className="panel card-detail"><div className="section-heading"><Badge kind={card.status==='verified'?'green':'neutral'}>{card.status}</Badge><span className="version">v{card.version}</span></div><h2>{card.title}</h2><p className="muted">{card.topic} / {card.owner}</p><div className="statement"><span className="eyebrow">{card.status==='verified'?'CURRENT VERIFIED STATEMENT':'ARCHIVED STATEMENT'}</span><p>{card.statement}</p></div><div className="metadata"><div><small>Source</small><strong>{card.source}</strong></div><div><small>Last verified</small><strong>{date(card.lastVerifiedAt)}</strong></div><div><small>Next review</small><strong>{card.nextReviewAt?date(card.nextReviewAt):'Event-triggered'}</strong></div><div><small>Sensitivity</small><strong>{card.sensitivity}</strong></div></div></section><section className="panel version-panel"><div className="section-heading"><h2>Version history</h2><History size={19}/></div><ol className="timeline">{[...card.history].reverse().map(v=><li key={v.version}><span className="timeline-dot"/><div className="timeline-heading"><strong>Version {v.version}</strong><Badge kind={v.status==='verified'?'green':'neutral'}>{v.status==='verified'?'Current':'Archived'}</Badge><time>{date(v.createdAt)}</time></div><p>{v.statement}</p><small>{v.author} · {v.note}</small>{v.evidenceId&&<a href={`/api/evidence/${v.evidenceId}`} className="source-link"><FileText size={14}/>{v.source}<ArrowDownToLine size={14}/></a>}{allowed('review')&&v.version!==card.version&&<Button variant="ghost" onClick={()=>{setRollbackVersion(v.version);setReason('');setModal('rollback');}}>Restore as a new version</Button>}</li>)}</ol></section></div><aside><section className="panel why-panel"><ShieldCheck size={25}/><h2>Why is this current?</h2><p>{card.status==='verified'?`Version ${card.version} was verified by ${card.history.at(-1)?.author}.`:'This card is archived and excluded from answers.'}</p><dl><dt>Verification</dt><dd>{date(card.lastVerifiedAt)}</dd><dt>Supporting source</dt><dd>{card.source}</dd><dt>Decision</dt><dd>{card.history.at(-1)?.note}</dd><dt>Open reviews</dt><dd>{allPending.filter(r=>r.cardId===card.id).length}</dd></dl>{freshness(card.lastVerifiedAt,card.nextReviewAt).overdue&&<p className="warning">Scheduled verification is overdue.</p>}<Button variant="secondary" onClick={()=>go('/ask')}>Ask about this knowledge <ArrowRight size={15}/></Button></section><section className="panel why-panel"><h3>Related knowledge</h3>{cards.filter(c=>c.topic===card.topic&&c.id!==card.id).map(c=><a className="source-link" key={c.id} href={`/knowledge/${c.id}`}>{c.title}<ArrowUpRight size={14}/></a>)}<p className="muted">Connections shown by topic. Dependency graph is planned.</p></section></aside></div>}
-  {view==='review'&&<><div className="section-heading"><h2>Pending decisions <Badge>{pending.length}</Badge></h2><span className="muted">J / K navigate · A / R select decision · S snooze · E evidence</span></div>{!review?<section className="panel"><Empty title="You’re all caught up">{allPending.length?`${allPending.length} review(s) are snoozed.`:'Upload new evidence to check for potential changes.'}</Empty></section>:<div className="review-layout"><aside className="review-list">{pending.map(r=><button className={`panel review-option ${r.id===review.id?'chosen':''}`} key={r.id} onClick={()=>setReviewId(r.id)}><Badge kind="amber">{relation(r.relation)}</Badge><strong>{cards.find(c=>c.id===r.cardId)?.title}</strong><small>{r.evidenceName}</small><span>{r.priority} priority</span></button>)}</aside><section className="panel review-detail"><div className="section-heading"><div><p className="eyebrow">PROPOSED CHANGE / V{review.cardVersion}</p><h2>{reviewCard?.title}</h2></div><Badge kind="amber">Needs review</Badge></div><div className="comparison"><div><span className="eyebrow">CURRENT KNOWLEDGE</span><blockquote>{review.oldQuote}</blockquote><small>{reviewCard?.source}</small></div><div><span className="eyebrow">NEW EVIDENCE</span><blockquote>{review.newQuote||'Scheduled policy review. No external evidence attached.'}</blockquote>{review.evidenceId&&<a className="source-link" href={`/api/evidence/${review.evidenceId}`}>{review.evidenceName}<ArrowDownToLine size={14}/></a>}</div></div><div className="explanation"><GitBranch size={20}/><div><strong>Why this was flagged <Badge>{review.engine==='demo'?'Demo rules':review.engine}</Badge></strong><p>{review.explanation}</p></div></div><div className="signals"><Badge kind="green">{review.engine==='policy'?'Policy trigger':'Exact quotes verified'}</Badge><Badge>{relation(review.relation)}</Badge><Badge>{review.evidenceId?'1 submitted source':'No new source'}</Badge><Badge>{date(review.createdAt)}</Badge></div>{allowed('review')?<form className="decision-form" onSubmit={decide}><h3>Your decision</h3><div className="decision-options">{[['update','Update knowledge'],['keep','Keep current'],['archive','Archive']].map(([id,label])=><button type="button" key={id} aria-pressed={decision===id} className={decision===id?'chosen':''} onClick={()=>setDecision(id)}>{label}</button>)}</div>{decision==='update'&&<label>Verified statement<textarea required rows={5} value={statement} maxLength={8000} onChange={e=>setStatement(e.target.value)}/></label>}<label>Reason for decision<input required maxLength={1000} placeholder="What did you verify?" value={reason} onChange={e=>setReason(e.target.value)}/></label><div className="decision-footer"><small>Recorded as {data.user.name}</small><Button disabled={busy}><Check size={17}/>Confirm {decision}</Button></div><div className="review-tools"><select aria-label="Assign reviewer" value={review.assignedTo||''} onChange={e=>run(()=>mutate(`reviews/${review.id}/manage`,{assignedTo:e.target.value},'Reviewer assigned.'))}><option value="" disabled>Assign reviewer</option>{data.members.filter(m=>can(m.role,'review')).map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select><Button type="button" variant="secondary" disabled={busy} onClick={()=>run(()=>mutate(`reviews/${review.id}/manage`,{snoozedUntil:new Date(Date.now()+86400000).toISOString()},'Snoozed for one day.'))}>Snooze 1 day</Button><Button type="button" variant="ghost" disabled={busy||!reason.trim()} onClick={()=>run(()=>mutate(`reviews/${review.id}/manage`,{evidenceRequested:reason},'Request recorded on this review.'))}>Request evidence</Button></div>{review.evidenceRequested&&<p className="warning">Evidence requested: {review.evidenceRequested}</p>}</form>:<p className="panel-footer">A reviewer, admin, or owner can resolve this change.</p>}</section></div>}{allPending.some(r=>r.snoozedUntil&&Date.parse(r.snoozedUntil)>Date.now())&&<section className="panel"><div className="section-heading"><h2>Snoozed reviews</h2></div>{allPending.filter(r=>r.snoozedUntil&&Date.parse(r.snoozedUntil)>Date.now()).map(r=><div className="attention-row" key={r.id}><strong>{cards.find(c=>c.id===r.cardId)?.title}</strong><span>Returns {date(r.snoozedUntil!)}</span></div>)}</section>}</>}
-  {view==='evidence'&&<section className="panel">{data.evidence.length?data.evidence.slice().reverse().map(e=><article className="evidence-row" key={e.id}><span className="row-icon"><FileText/></span><div className="evidence-content"><h3>{e.name}</h3><p className="muted">{cards.find(c=>c.id===e.cardId)?.title} · {date(e.createdAt)} · {(e.size/1024).toFixed(1)} KB</p><details><summary>Source text & provenance</summary><p className="extracted">{e.text}</p><dl><dt>Submitted by</dt><dd>{data.members.find(m=>m.id===e.submittedBy)?.name||e.submittedBy}</dd><dt>SHA-256</dt><dd className="hash">{e.contentHash}</dd><dt>Authority</dt><dd>{e.trustMetadata.authority}</dd></dl></details></div><div className="evidence-actions"><a className="icon-button" aria-label={`Download ${e.name}`} href={`/api/evidence/${e.id}`}><ArrowDownToLine size={18}/></a>{allowed('ingest')&&<Button variant="secondary" disabled={busy||cards.find(c=>c.id===e.cardId)?.status==='archived'} onClick={()=>run(()=>compare(e))}>Compare <ArrowRight size={16}/></Button>}</div></article>):<Empty title="Every change starts with evidence">Upload a TXT, Markdown, or text-based PDF. Originals stay linked to their reviews.</Empty>}</section>}
-  {view==='ask'&&<section className="ask-surface"><div className="ask-emblem"><MessageSquare size={30}/></div><h2>What does your team know now?</h2><p className="muted">Current versions. Verified sources. A history you can follow.</p><form className="ask-input" onSubmit={e=>{e.preventDefault();run(async()=>setAnswer(await api<Answer>('ask',{question})));}}><input aria-label="Your question" required maxLength={1000} value={question} onChange={e=>setQuestion(e.target.value)} placeholder="How should engineers handle Service X after deployment?"/><Button disabled={busy} aria-label="Ask question"><ArrowRight size={20}/></Button></form><button className="suggested-question" onClick={()=>setQuestion('How should engineers handle Service X after a successful payment deployment?')}>Service X after deployment <ArrowUpRight size={14}/></button>{answer&&<div className="panel answer" aria-live="polite"><span className="eyebrow">FROM CURRENT VERIFIED KNOWLEDGE</span><p>{answer.text}</p><div className="citations">{answer.citations.map((c,i)=><a key={c.cardId} href={`/knowledge/${c.cardId}`}><Badge>{i+1}</Badge><div><strong>{c.title} · v{c.version}</strong><small>{c.source} · Verified {date(c.verifiedAt)}</small></div><ArrowUpRight size={16}/></a>)}</div></div>}<p className="ask-footnote"><ShieldCheck size={15}/>Archived and expired knowledge is excluded. Answers quote sources directly.</p></section>}
-  {view==='audit'&&(allowed('audit')?<section className="panel audit-table"><div className="table-heading"><span>EVENT / PERSON</span><span>DATE / REQUEST</span></div>{data.audit.slice().reverse().map(e=><details key={e.id}><summary><div><strong>{relation(e.action.replaceAll('.','_'))}</strong><small>{e.actorName} · {e.entityId}</small></div><div><span>{date(e.timestamp)}</span><small>{e.requestId.slice(0,8)}</small></div></summary><pre>{JSON.stringify({before:e.before,after:e.after,requestId:e.requestId,timestamp:e.timestamp},null,2)}</pre></details>)}{!data.audit.length&&<Empty title="No events yet">Account and knowledge changes will appear here.</Empty>}</section>:<p className="error">Your role does not include audit access.</p>)}
-  {view==='settings'&&<><div className="tabs">{['profile','security','organization','integrations'].map(s=><a className={(selected||'profile')===s?'selected':''} key={s} href={`/settings/${s}`}>{s}</a>)}</div>{(!selected||selected==='profile')&&<section className="panel settings-panel"><h2>Your profile</h2><form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);run(()=>mutate('account/profile',{name:f.get('name'),timezone:f.get('timezone'),notifications:f.get('notifications')==='on'},'Profile saved.'));}}><label>Name<input name="name" required maxLength={100} defaultValue={data.user.name}/></label><label>Email<input value={data.user.email} readOnly/></label><label>Timezone<input name="timezone" required defaultValue={data.user.timezone}/></label><label className="checkbox"><input name="notifications" type="checkbox" defaultChecked={data.user.notifications}/>Review notification preference (delivery is planned)</label><Button disabled={busy}>Save profile</Button></form></section>}
-  {selected==='security'&&<section className="panel settings-panel"><h2>Account security</h2><p className="muted">Signed sessions expire after 8 hours. Sensitive changes require a sign-in within the last 15 minutes.</p>{data.user.identityProvider==='local'?<form onSubmit={e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));run(async()=>{await api('account/password',f);await signOut({callbackUrl:'/login'});});}}><label>Current password<input name="currentPassword" type="password" required autoComplete="current-password"/></label><label>New password<input name="password" type="password" minLength={12} maxLength={128} required autoComplete="new-password"/></label><Button disabled={busy}>Change password</Button><p className="muted">MFA and passkeys are provided through configured Cognito managed sign-in. Local credentials do not offer these factors.</p></form>:<p>Use your organization’s Cognito sign-in to manage password recovery and the configured MFA or passkey flow.</p>}<Button variant="secondary" disabled={busy} onClick={()=>run(async()=>{await api('account/revoke-sessions',{});await signOut({callbackUrl:'/login'});})}>Sign out all devices</Button></section>}
-  {selected==='organization'&&<section className="panel settings-panel"><h2>{data.organization.name}</h2>{allowed('admin')&&<><form onSubmit={e=>{e.preventDefault();run(()=>mutate('organization/settings',Object.fromEntries(new FormData(e.currentTarget)),'Organization updated.'));}}><label>Organization name<input name="name" required maxLength={100} defaultValue={data.organization.name}/></label><Button disabled={busy}>Save organization</Button></form><h3>Invite a teammate</h3><form onSubmit={e=>{e.preventDefault();const body=Object.fromEntries(new FormData(e.currentTarget));run(async()=>{const r=await api<{url:string}>('organization/invite',body);setInviteUrl(r.url);await refresh();});}}><label>Email<input name="email" type="email" required/></label><label>Role<select name="role">{['Reviewer','Editor','Viewer','Auditor',...(data.user.role==='Owner'?['Admin']:[])].map(r=><option key={r}>{r}</option>)}</select></label><Button disabled={busy}>Create invitation link</Button></form>{inviteUrl&&<label>Share this invitation with your teammate<input readOnly value={inviteUrl} onFocus={e=>e.target.select()}/></label>}</>}<h3>Members</h3>{data.members.map(m=><div className="member-row" key={m.id}><span className="avatar">{m.name.slice(0,2).toUpperCase()}</span><div><strong>{m.name}</strong><small>{m.email}</small></div>{allowed('admin')&&m.id!==data.user.id&&m.role!=='Owner'?<select aria-label={`Role for ${m.name}`} value={m.role} disabled={busy} onChange={e=>run(()=>mutate('organization/role',{email:m.email,role:e.target.value},'Role updated. Existing sessions were revoked.'))}>{['Reviewer','Editor','Viewer','Auditor',...(data.user.role==='Owner'?['Admin']:[])].map(r=><option key={r}>{r}</option>)}</select>:<Badge>{m.role}</Badge>}</div>)}</section>}
-  {selected==='integrations'&&<div className="integration-grid">{['GitHub','Slack','Notion','Google Drive','Jira','Confluence'].map((name,i)=><section className="panel integration-card" key={name}><FolderOpen size={26}/><h2>{name}</h2><p>Bring source updates into human-reviewed knowledge.</p><Badge>Planned · Phase {i<4?'2':'3'}</Badge></section>)}</div>}</>}
-  </>}<footer><GitBranch size={15}/>Git tracks how code changes. Echo tracks how knowledge changes.<span>{data?.mode.ai==='demo'?'Demo rules · No live AI':data?.mode.ai==='bedrock'?'Bedrock configured':'Groq configured'}</span></footer></main></div>
-  {notice&&<div className="toast" role="status"><Check size={18}/>{notice}</div>}
-  <Dialog title={modal==='card'?'Capture verified knowledge':modal==='rollback'?'Restore a previous version':'Add new evidence'} open={!!modal} onClose={()=>!busy&&setModal(null)}>
-  {modal==='evidence'&&<form className="modal-body" onSubmit={upload}><p className="muted">Compare a source against current knowledge. A human decides what changes.</p><label>Knowledge card<select value={cardId} onChange={e=>setCardId(e.target.value)}>{active.map(c=><option value={c.id} key={c.id}>{c.title} · v{c.version}</option>)}</select></label><label className="dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();setFile(e.dataTransfer.files[0]||null);}}><Upload size={25}/><strong>{file?.name||'Drop a document or choose a file'}</strong><small>TXT, Markdown, PDF · Up to 2 MB</small><input type="file" aria-label="Choose evidence file" accept=".txt,.md,.pdf" onChange={e=>setFile(e.target.files?.[0]||null)}/></label>{file?<Button type="button" variant="ghost" onClick={()=>setFile(null)}>Use pasted text instead</Button>:<><label>Source name<input required value={sourceName} onChange={e=>setSourceName(e.target.value)} maxLength={160}/></label><label>Evidence text<textarea rows={5} required minLength={10} maxLength={30000} value={evidenceText} onChange={e=>setEvidenceText(e.target.value)}/></label></>}<button type="button" className="source-link" onClick={()=>{setCardId('payment-deployment');setFile(null);setEvidenceText(sample);setSourceName('deployment-update-groq.txt');}}>Use the Service X example <ArrowRight size={15}/></button>{error&&<p className="error" role="alert">{error}</p>}<Button disabled={busy||!active.some(c=>c.id===cardId)}>{busy?'Comparing…':'Compare evidence'}<ArrowRight size={16}/></Button></form>}
-  {modal==='card'&&<form className="modal-body" onSubmit={e=>{e.preventDefault();const body=Object.fromEntries(new FormData(e.currentTarget));run(async()=>{const c=await api<Card>('knowledge',body);await refresh();setModal(null);go(`/knowledge/${c.id}`);});}}><label>Title<input name="title" required maxLength={120}/></label><div className="form-row"><label>Topic<input name="topic" required maxLength={80}/></label><label>Owner<input name="owner" required defaultValue={data?.user.name} maxLength={100}/></label></div><label>Verified statement<textarea name="statement" required rows={4} maxLength={8000}/></label><label>Source<input name="source" required maxLength={200}/></label><div className="form-row"><label>Review frequency<select name="volatility"><option value="high">30 days</option><option value="medium">90 days</option><option value="low">365 days</option><option value="event">Event-triggered</option></select></label><label>Sensitivity<select name="sensitivity">{['Internal','Public','Confidential','Restricted'].map(v=><option key={v}>{v}</option>)}</select></label></div>{error&&<p className="error" role="alert">{error}</p>}<Button disabled={busy}>Create verified card</Button></form>}
-  {modal==='rollback'&&card&&<form className="modal-body" onSubmit={e=>{e.preventDefault();run(async()=>{await mutate(`knowledge/${card.id}/rollback`,{expectedVersion:card.version,version:rollbackVersion,reason},`Created version ${card.version+1} from version ${rollbackVersion}.`);setModal(null);setAnswer(undefined);});}}><p>Version {rollbackVersion} will become a new version. Existing history stays intact.</p><label>Reason<input required maxLength={1000} value={reason} onChange={e=>setReason(e.target.value)}/></label>{error&&<p className="error" role="alert">{error}</p>}<Button disabled={busy}>Create version {card.version+1}</Button></form>}
-  </Dialog></div>;
+const sample =
+  'The payment deployment pipeline now automatically restarts Service X after every successful deployment. Engineers no longer need to restart Service X manually. If the automated restart fails, follow the incident response runbook.';
+const date = (v: string) => new Date(v).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' });
+const relation = (v: string) => v.replaceAll('_', ' ');
+export async function api<T>(path: string, body?: unknown): Promise<T> {
+  const r = await fetch(`/api/${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await r.json();
+  if (r.status === 401) {
+    location.href = '/login';
+    throw new Error('Sign in to continue.');
+  }
+  if (!r.ok) throw new Error(data.error || 'The request failed.');
+  return data;
 }
-function Stat({label,value,detail,icon,accent=false}:{label:string;value:number;detail:string;icon:ReactNode;accent?:boolean}){return <div className={`stat ${accent?'accent':''}`}><div><span>{label}</span>{icon}</div><strong>{value.toString().padStart(2,'0')}</strong><small>{detail}</small></div>;}
-function CardRow({card,pending}:{card:Card;pending:boolean}){return <a className="knowledge-row" href={`/knowledge/${card.id}`}><span className="row-icon"><FileText size={21}/></span><div className="row-text"><strong>{card.title}</strong><small>{card.topic} · {card.owner}</small></div><div className="row-status"><Badge kind={card.status==='archived'?'neutral':pending?'amber':'green'}>{card.status==='archived'?'Archived':pending?'Needs review':'Verified'}</Badge><small>v{card.version} · {date(card.updatedAt)}</small></div><ChevronRight size={17}/></a>;}
+function Badge({ children, kind = 'neutral' }: { children: ReactNode; kind?: string }) {
+  return <span className={`badge ${kind}`}>{children}</span>;
+}
+function Empty({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="empty">
+      <GitBranch size={28} />
+      <h3>{title}</h3>
+      <p>{children}</p>
+    </div>
+  );
+}
+export default function Workspace() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const parts = pathname.split('/').filter(Boolean);
+  const view = parts[0] || 'dashboard';
+  const selected = parts[1];
+  const [data, setData] = useState<Snapshot>();
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('all');
+  const [topic, setTopic] = useState('all');
+  const [owner, setOwner] = useState('all');
+  const [risk, setRisk] = useState('all');
+  const [modal, setModal] = useState<'evidence' | 'card' | 'rollback' | null>(null);
+  const [cardId, setCardId] = useState('payment-deployment');
+  const [sourceName, setSourceName] = useState('deployment-update-groq.txt');
+  const [evidenceText, setEvidenceText] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [reviewId, setReviewId] = useState('');
+  const [statement, setStatement] = useState('');
+  const [reason, setReason] = useState('');
+  const [decision, setDecision] = useState('update');
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState<Answer>();
+  const [rollbackVersion, setRollbackVersion] = useState(1);
+  const [inviteUrl, setInviteUrl] = useState('');
+  const refresh = useCallback(async () => {
+    const d = await api<Snapshot>('workspace');
+    setData(d);
+    return d;
+  }, []);
+  useEffect(() => {
+    refresh().catch(e => setError(e.message));
+  }, [refresh]);
+  useEffect(() => {
+    setQuery('');
+    setStatus('all');
+    setTopic('all');
+    setOwner('all');
+    setRisk('all');
+  }, [pathname]);
+  useEffect(() => {
+    if (notice) {
+      const t = setTimeout(() => setNotice(''), 6000);
+      return () => clearTimeout(t);
+    }
+  }, [notice]);
+  const go = (path: string) => router.push(path);
+  async function run(fn: () => Promise<void>) {
+    setBusy(true);
+    setError('');
+    try {
+      await fn();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const cards = data?.cards || [];
+  const allPending =
+    data?.reviews.filter(
+      r => r.status === 'pending' && cards.some(c => c.id === r.cardId && c.version === r.cardVersion && c.status === 'verified'),
+    ) || [];
+  const pending = allPending.filter(r => !r.snoozedUntil || Date.parse(r.snoozedUntil) <= Date.now());
+  const active = cards.filter(c => c.status === 'verified');
+  const card = cards.find(c => c.id === selected) || cards[0];
+  const review = pending.find(r => r.id === reviewId) || pending[0];
+  const reviewCard = cards.find(c => c.id === review?.cardId);
+  useEffect(() => {
+    setStatement(review?.proposedStatement || '');
+    setReason('');
+    setDecision('update');
+  }, [review?.id]);
+  const allowed = (p: Parameters<typeof can>[1]) => (data ? can(data.user.role, p) : false);
+  const mutate = async (path: string, body: unknown, message: string) => {
+    await api(path, body);
+    await refresh();
+    setNotice(message);
+  };
+  const compare = async (e: Evidence) => {
+    const r = await api<Review>(`evidence/${e.id}/compare`, {});
+    await refresh();
+    setModal(null);
+    if (r.status === 'pending') {
+      setReviewId(r.id);
+      go('/review');
+    } else setNotice(`${relation(r.relation)}. No new review is needed.`);
+  };
+  async function upload(e: FormEvent) {
+    e.preventDefault();
+    await run(async () => {
+      let content = evidenceText;
+      let encoding = 'text';
+      let name = sourceName;
+      if (file) {
+        if (file.size > 2 * 1024 * 1024) throw new Error('Files must be smaller than 2 MB.');
+        content = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(String(r.result).split(',')[1]);
+          r.onerror = () => reject(new Error('Unable to read file.'));
+          r.readAsDataURL(file);
+        });
+        encoding = 'base64';
+        name = file.name;
+      }
+      const evidence = await api<Evidence & { duplicate?: boolean }>('evidence', { cardId, name, content, encoding });
+      await refresh();
+      if (evidence.duplicate) setNotice('Already ingested. Reusing the original evidence.');
+      try {
+        await compare(evidence);
+      } catch (e) {
+        setModal(null);
+        go('/evidence');
+        throw new Error(`Evidence saved. ${(e as Error).message}`);
+      }
+      setFile(null);
+      setEvidenceText('');
+    });
+  }
+  async function decide(e?: FormEvent) {
+    e?.preventDefault();
+    if (!review || busy) return;
+    if (!reason.trim()) {
+      setError('Add a reason explaining what you verified.');
+      return;
+    }
+    await run(async () => {
+      await mutate(
+        `reviews/${review.id}/decision`,
+        { decision, expectedVersion: review.cardVersion, note: reason, ...(decision === 'update' ? { statement } : {}) },
+        'Decision saved. The full history is preserved.',
+      );
+      setAnswer(undefined);
+      go(`/knowledge/${review.cardId}`);
+    });
+  }
+  useEffect(() => {
+    if (view !== 'review') return;
+    const listener = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+      const index = pending.findIndex(r => r.id === review?.id);
+      if (e.key === 'j') setReviewId(pending[Math.min(index + 1, pending.length - 1)]?.id || '');
+      if (e.key === 'k') setReviewId(pending[Math.max(index - 1, 0)]?.id || '');
+      if (e.key === 'a') setDecision('update');
+      if (e.key === 'r') setDecision('keep');
+      if (e.key === 'e') go('/evidence');
+      if (e.key === 's' && review && allowed('review'))
+        run(() =>
+          mutate(
+            `reviews/${review.id}/manage`,
+            { snoozedUntil: new Date(Date.now() + 86400000).toISOString() },
+            'Review snoozed for one day.',
+          ),
+        );
+    };
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  });
+  const title: Record<string, string> = {
+    dashboard: 'Your knowledge, in focus.',
+    knowledge: selected ? 'Knowledge detail' : 'Knowledge base',
+    review: 'Changes worth a closer look.',
+    evidence: 'The evidence behind every change.',
+    ask: 'Ask your current knowledge.',
+    settings: 'Workspace settings',
+    audit: 'Every decision leaves a trace.',
+    history: 'Version history',
+  };
+  const subtitle: Record<string, string> = {
+    dashboard: 'A clear view of what is trusted, what changed, and what needs you.',
+    knowledge: 'Verified procedures with their sources and complete history.',
+    review: 'The evidence suggests a change. You decide what becomes current.',
+    evidence: 'Original sources, preserved exactly as they were submitted.',
+    ask: 'Cited excerpts from current, verified knowledge only.',
+    settings: 'Manage your account, organization, and access.',
+    audit: 'Trace changes to the person, source, and version behind them.',
+    history: 'Nothing disappears when knowledge evolves.',
+  };
+  const nav = [
+    ['dashboard', 'Overview', LayoutDashboard],
+    ['knowledge', 'Knowledge', BookOpen],
+    ['review', 'Review queue', GitBranch],
+    ['evidence', 'Evidence library', FolderOpen],
+    ['ask', 'Ask Echo', MessageSquare],
+  ] as const;
+  const stale = active.filter(c => freshness(c.lastVerifiedAt, c.nextReviewAt).overdue);
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <a className="brand" href="/dashboard">
+          <GitBranch size={29} />
+          echo<span>.</span>
+        </a>
+        <div className="workspace-label">
+          <span className="workspace-icon">{data?.organization.name.slice(0, 1) || 'E'}</span>
+          <div>
+            <strong>{data?.organization.name || 'Your workspace'}</strong>
+            <small>{data?.user.role || 'Knowledge workspace'}</small>
+          </div>
+        </div>
+        <span className="nav-heading">WORKSPACE</span>
+        <nav aria-label="Main navigation">
+          {nav.map(([id, label, Icon]) => (
+            <a key={id} href={`/${id}`} className={view === id ? 'active' : ''}>
+              <Icon size={19} />
+              <span>{label}</span>
+              {id === 'review' && pending.length > 0 && <b>{pending.length}</b>}
+            </a>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <p className="principle">
+            <ShieldCheck size={18} />
+            AI proposes.
+            <br />
+            Humans verify.
+          </p>
+          <nav>
+            <a href="/settings/profile" className={view === 'settings' ? 'active' : ''}>
+              <Settings size={18} />
+              <span>Settings</span>
+            </a>
+            {allowed('audit') && (
+              <a href="/audit" className={view === 'audit' ? 'active' : ''}>
+                <Activity size={18} />
+                <span>Audit trail</span>
+              </a>
+            )}
+          </nav>
+          <div className="user-row">
+            <span className="avatar">{data?.user.name.slice(0, 2).toUpperCase() || '—'}</span>
+            <div>
+              <strong>{data?.user.name}</strong>
+              <small>{data?.user.role}</small>
+            </div>
+            <button className="icon-button" aria-label="Sign out" onClick={() => signOut({ callbackUrl: '/login' })}>
+              <LogOut size={17} />
+            </button>
+          </div>
+        </div>
+      </aside>
+      <div className="main-shell">
+        <header className="topbar">
+          <span>
+            Workspace <ChevronRight size={14} />
+            <strong>{nav.find(n => n[0] === view)?.[1] || view}</strong>
+          </span>
+          <Badge kind="green">
+            <ShieldCheck size={13} />
+            Human verification
+          </Badge>
+        </header>
+        <main className="main-content">
+          <div className="page-heading">
+            <div>
+              <p className="eyebrow">ECHO / {view.toUpperCase()}</p>
+              <h1>{title[view] || 'Page not found'}</h1>
+              <p className="subtitle">{subtitle[view]}</p>
+            </div>
+            {allowed('ingest') && active.length > 0 && (
+              <Button
+                onClick={() => {
+                  setCardId(card?.id || active[0].id);
+                  setModal('evidence');
+                }}
+              >
+                <Plus size={17} />
+                Add evidence
+              </Button>
+            )}
+          </div>
+          {error && (
+            <div className="error" role="alert">
+              {error}
+              <button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}>
+                <X size={17} />
+              </button>
+            </div>
+          )}
+          {!data ? (
+            <div className="loading">
+              <LoaderCircle className="spin" />
+              Loading workspace…
+            </div>
+          ) : (
+            <>
+              {view === 'dashboard' && (
+                <>
+                  <section className="stats">
+                    <Stat
+                      label="Current knowledge"
+                      value={active.length}
+                      detail={`${cards.length} total cards`}
+                      icon={<BookOpen />}
+                    />
+                    <Stat
+                      label="Awaiting review"
+                      value={pending.length}
+                      detail={`${pending.filter(r => r.priority === 'high').length} high-priority changes`}
+                      icon={<GitBranch />}
+                      accent
+                    />
+                    <Stat
+                      label="Due for verification"
+                      value={stale.length}
+                      detail="Based on scheduled review dates"
+                      icon={<Clock />}
+                    />
+                    <Stat
+                      label="Evidence captured"
+                      value={data.evidence.length}
+                      detail="Original sources preserved"
+                      icon={<FileText />}
+                    />
+                  </section>
+                  <div className="dashboard-grid">
+                    <section className="panel">
+                      <div className="section-heading">
+                        <h2>Your attention matters</h2>
+                        <a href="/review">
+                          Open queue <ArrowUpRight size={16} />
+                        </a>
+                      </div>
+                      {pending.length ? (
+                        pending.slice(0, 4).map(r => (
+                          <button
+                            className="attention-row"
+                            key={r.id}
+                            onClick={() => {
+                              setReviewId(r.id);
+                              go('/review');
+                            }}
+                          >
+                            <span className="row-icon">
+                              <GitBranch size={20} />
+                            </span>
+                            <div>
+                              <strong>{cards.find(c => c.id === r.cardId)?.title}</strong>
+                              <small>
+                                {relation(r.relation)} · {r.evidenceName}
+                              </small>
+                            </div>
+                            <Badge kind="amber">{r.priority}</Badge>
+                            <ArrowRight size={17} />
+                          </button>
+                        ))
+                      ) : (
+                        <Empty title="No open changes">New evidence will appear here when it needs human review.</Empty>
+                      )}
+                      <div className="panel-footer">
+                        <ShieldCheck size={15} />
+                        Nothing becomes current without a human decision.
+                      </div>
+                    </section>
+                    <section className="panel health-panel">
+                      <div className="section-heading">
+                        <h2>Knowledge health</h2>
+                        <Activity size={19} />
+                      </div>
+                      <div className="health-number">
+                        {active.length ? Math.round(((active.length - stale.length) / active.length) * 100) : 0}
+                        <span>%</span>
+                      </div>
+                      <p>Within the scheduled review period</p>
+                      <div className="health-bar">
+                        <span
+                          style={{ width: `${active.length ? ((active.length - stale.length) / active.length) * 100 : 0}%` }}
+                        />
+                      </div>
+                      <div className="health-legend">
+                        <span>
+                          <i />
+                          {active.length - stale.length} on schedule
+                        </span>
+                        <span>{stale.length} due</span>
+                      </div>
+                      {allowed('review') && (
+                        <Button
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            run(() => mutate('freshness', {}, 'Freshness checks complete. Due items are in the review queue.'))
+                          }
+                        >
+                          Check review dates <ArrowRight size={15} />
+                        </Button>
+                      )}
+                    </section>
+                  </div>
+                  <div className="dashboard-grid lower">
+                    <section className="panel">
+                      <div className="section-heading">
+                        <h2>Recent knowledge</h2>
+                        <a href="/knowledge">
+                          View all <ArrowUpRight size={16} />
+                        </a>
+                      </div>
+                      {cards.slice(0, 4).map(c => (
+                        <CardRow key={c.id} card={c} pending={pending.some(r => r.cardId === c.id)} />
+                      ))}
+                      {!cards.length && (
+                        <Empty title="Start with something your team knows">
+                          Create a verified knowledge card or load the Service X example.
+                        </Empty>
+                      )}
+                    </section>
+                    <section className="panel">
+                      <div className="section-heading">
+                        <h2>Activity</h2>
+                        <History size={18} />
+                      </div>
+                      {data.audit
+                        .slice(-5)
+                        .reverse()
+                        .map(e => (
+                          <div className="activity-row" key={e.id}>
+                            <span className="timeline-dot" />
+                            <div>
+                              <strong>{relation(e.action.replaceAll('.', '_'))}</strong>
+                              <small>
+                                {e.actorName} · {date(e.timestamp)}
+                              </small>
+                            </div>
+                          </div>
+                        ))}
+                      {!data.audit.length && (
+                        <Empty title="Your history starts here">
+                          Review decisions and changes become part of your audit trail.
+                        </Empty>
+                      )}
+                    </section>
+                  </div>
+                  {allowed('admin') && !cards.length && (
+                    <div className="demo-banner">
+                      <div>
+                        <h3>Meet Service X</h3>
+                        <p>Follow a manual deployment step as it becomes automated, with human review at the center.</p>
+                      </div>
+                      <Button disabled={busy} onClick={() => run(() => mutate('seed', {}, 'The Service X example is ready.'))}>
+                        Load example workspace <ArrowRight size={16} />
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+              {view === 'knowledge' && !selected && (
+                <>
+                  <div className="toolbar">
+                    <label className="search">
+                      <Search size={18} />
+                      <input
+                        aria-label="Search knowledge"
+                        placeholder="Search title, procedure, or source…"
+                        value={query}
+                        onChange={e => setQuery(e.target.value)}
+                      />
+                    </label>
+                    <select aria-label="Status filter" value={status} onChange={e => setStatus(e.target.value)}>
+                      <option value="all">All statuses</option>
+                      <option value="verified">Verified</option>
+                      <option value="review">Needs review</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                    <select aria-label="Topic filter" value={topic} onChange={e => setTopic(e.target.value)}>
+                      <option value="all">All topics</option>
+                      {[...new Set(cards.map(c => c.topic))].map(t => (
+                        <option key={t}>{t}</option>
+                      ))}
+                    </select>
+                    <select aria-label="Owner filter" value={owner} onChange={e => setOwner(e.target.value)}>
+                      <option value="all">All owners</option>
+                      {[...new Set(cards.map(c => c.owner))].map(t => (
+                        <option key={t}>{t}</option>
+                      ))}
+                    </select>
+                    <select aria-label="Review schedule filter" value={risk} onChange={e => setRisk(e.target.value)}>
+                      <option value="all">All review dates</option>
+                      <option value="due">Due for review</option>
+                    </select>
+                    {allowed('create') && (
+                      <Button onClick={() => setModal('card')}>
+                        <Plus size={16} />
+                        New card
+                      </Button>
+                    )}
+                  </div>
+                  <section className="panel">
+                    <div className="table-heading">
+                      <span>KNOWLEDGE / OWNER</span>
+                      <span>STATUS / VERSION</span>
+                    </div>
+                    {cards
+                      .filter(
+                        c =>
+                          `${c.title} ${c.statement} ${c.source}`.toLowerCase().includes(query.toLowerCase()) &&
+                          (status === 'all' ||
+                            status === c.status ||
+                            (status === 'review' && pending.some(r => r.cardId === c.id))) &&
+                          (topic === 'all' || topic === c.topic) &&
+                          (owner === 'all' || owner === c.owner) &&
+                          (risk === 'all' || freshness(c.lastVerifiedAt, c.nextReviewAt).overdue),
+                      )
+                      .map(c => (
+                        <CardRow key={c.id} card={c} pending={pending.some(r => r.cardId === c.id)} />
+                      ))}
+                    {!cards.length && (
+                      <Empty title="No knowledge yet">Create your first verified card, or load the example on Overview.</Empty>
+                    )}
+                  </section>
+                </>
+              )}
+              {((view === 'knowledge' && selected) || view === 'history') && card && (
+                <div className="detail-layout">
+                  <div>
+                    <section className="panel card-detail">
+                      <div className="section-heading">
+                        <Badge kind={card.status === 'verified' ? 'green' : 'neutral'}>{card.status}</Badge>
+                        <span className="version">v{card.version}</span>
+                      </div>
+                      <h2>{card.title}</h2>
+                      <p className="muted">
+                        {card.topic} / {card.owner}
+                      </p>
+                      <div className="statement">
+                        <span className="eyebrow">
+                          {card.status === 'verified' ? 'CURRENT VERIFIED STATEMENT' : 'ARCHIVED STATEMENT'}
+                        </span>
+                        <p>{card.statement}</p>
+                      </div>
+                      <div className="metadata">
+                        <div>
+                          <small>Source</small>
+                          <strong>{card.source}</strong>
+                        </div>
+                        <div>
+                          <small>Last verified</small>
+                          <strong>{date(card.lastVerifiedAt)}</strong>
+                        </div>
+                        <div>
+                          <small>Next review</small>
+                          <strong>{card.nextReviewAt ? date(card.nextReviewAt) : 'Event-triggered'}</strong>
+                        </div>
+                        <div>
+                          <small>Sensitivity</small>
+                          <strong>{card.sensitivity}</strong>
+                        </div>
+                      </div>
+                    </section>
+                    <section className="panel version-panel">
+                      <div className="section-heading">
+                        <h2>Version history</h2>
+                        <History size={19} />
+                      </div>
+                      <ol className="timeline">
+                        {[...card.history].reverse().map(v => (
+                          <li key={v.version}>
+                            <span className="timeline-dot" />
+                            <div className="timeline-heading">
+                              <strong>Version {v.version}</strong>
+                              <Badge kind={v.status === 'verified' ? 'green' : 'neutral'}>
+                                {v.status === 'verified' ? 'Current' : 'Archived'}
+                              </Badge>
+                              <time>{date(v.createdAt)}</time>
+                            </div>
+                            <p>{v.statement}</p>
+                            <small>
+                              {v.author} · {v.note}
+                            </small>
+                            {v.evidenceId && (
+                              <a href={`/api/evidence/${v.evidenceId}`} className="source-link">
+                                <FileText size={14} />
+                                {v.source}
+                                <ArrowDownToLine size={14} />
+                              </a>
+                            )}
+                            {allowed('review') && v.version !== card.version && (
+                              <Button
+                                variant="ghost"
+                                onClick={() => {
+                                  setRollbackVersion(v.version);
+                                  setReason('');
+                                  setModal('rollback');
+                                }}
+                              >
+                                Restore as a new version
+                              </Button>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    </section>
+                  </div>
+                  <aside>
+                    <section className="panel why-panel">
+                      <ShieldCheck size={25} />
+                      <h2>Why is this current?</h2>
+                      <p>
+                        {card.status === 'verified'
+                          ? `Version ${card.version} was verified by ${card.history.at(-1)?.author}.`
+                          : 'This card is archived and excluded from answers.'}
+                      </p>
+                      <dl>
+                        <dt>Verification</dt>
+                        <dd>{date(card.lastVerifiedAt)}</dd>
+                        <dt>Supporting source</dt>
+                        <dd>{card.source}</dd>
+                        <dt>Decision</dt>
+                        <dd>{card.history.at(-1)?.note}</dd>
+                        <dt>Open reviews</dt>
+                        <dd>{allPending.filter(r => r.cardId === card.id).length}</dd>
+                      </dl>
+                      {freshness(card.lastVerifiedAt, card.nextReviewAt).overdue && (
+                        <p className="warning">Scheduled verification is overdue.</p>
+                      )}
+                      <Button variant="secondary" onClick={() => go('/ask')}>
+                        Ask about this knowledge <ArrowRight size={15} />
+                      </Button>
+                    </section>
+                    <section className="panel why-panel">
+                      <h3>Related knowledge</h3>
+                      {cards
+                        .filter(c => c.topic === card.topic && c.id !== card.id)
+                        .map(c => (
+                          <a className="source-link" key={c.id} href={`/knowledge/${c.id}`}>
+                            {c.title}
+                            <ArrowUpRight size={14} />
+                          </a>
+                        ))}
+                      <p className="muted">Connections shown by topic. Dependency graph is planned.</p>
+                    </section>
+                  </aside>
+                </div>
+              )}
+              {view === 'review' && (
+                <>
+                  <div className="section-heading">
+                    <h2>
+                      Pending decisions <Badge>{pending.length}</Badge>
+                    </h2>
+                    <span className="muted">J / K navigate · A / R select decision · S snooze · E evidence</span>
+                  </div>
+                  {!review ? (
+                    <section className="panel">
+                      <Empty title="You’re all caught up">
+                        {allPending.length
+                          ? `${allPending.length} review(s) are snoozed.`
+                          : 'Upload new evidence to check for potential changes.'}
+                      </Empty>
+                    </section>
+                  ) : (
+                    <div className="review-layout">
+                      <aside className="review-list">
+                        {pending.map(r => (
+                          <button
+                            className={`panel review-option ${r.id === review.id ? 'chosen' : ''}`}
+                            key={r.id}
+                            onClick={() => setReviewId(r.id)}
+                          >
+                            <Badge kind="amber">{relation(r.relation)}</Badge>
+                            <strong>{cards.find(c => c.id === r.cardId)?.title}</strong>
+                            <small>{r.evidenceName}</small>
+                            <span>{r.priority} priority</span>
+                          </button>
+                        ))}
+                      </aside>
+                      <section className="panel review-detail">
+                        <div className="section-heading">
+                          <div>
+                            <p className="eyebrow">PROPOSED CHANGE / V{review.cardVersion}</p>
+                            <h2>{reviewCard?.title}</h2>
+                          </div>
+                          <Badge kind="amber">Needs review</Badge>
+                        </div>
+                        <div className="comparison">
+                          <div>
+                            <span className="eyebrow">CURRENT KNOWLEDGE</span>
+                            <blockquote>{review.oldQuote}</blockquote>
+                            <small>{reviewCard?.source}</small>
+                          </div>
+                          <div>
+                            <span className="eyebrow">NEW EVIDENCE</span>
+                            <blockquote>
+                              {review.newQuote || 'Scheduled policy review. No external evidence attached.'}
+                            </blockquote>
+                            {review.evidenceId && (
+                              <a className="source-link" href={`/api/evidence/${review.evidenceId}`}>
+                                {review.evidenceName}
+                                <ArrowDownToLine size={14} />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                        <div className="explanation">
+                          <GitBranch size={20} />
+                          <div>
+                            <strong>
+                              Why this was flagged <Badge>{review.engine === 'demo' ? 'Demo rules' : review.engine}</Badge>
+                            </strong>
+                            <p>{review.explanation}</p>
+                          </div>
+                        </div>
+                        <div className="signals">
+                          <Badge kind="green">{review.engine === 'policy' ? 'Policy trigger' : 'Exact quotes verified'}</Badge>
+                          <Badge>{relation(review.relation)}</Badge>
+                          <Badge>{review.evidenceId ? '1 submitted source' : 'No new source'}</Badge>
+                          <Badge>{date(review.createdAt)}</Badge>
+                        </div>
+                        {allowed('review') ? (
+                          <form className="decision-form" onSubmit={decide}>
+                            <h3>Your decision</h3>
+                            <div className="decision-options">
+                              {[
+                                ['update', 'Update knowledge'],
+                                ['keep', 'Keep current'],
+                                ['archive', 'Archive'],
+                              ].map(([id, label]) => (
+                                <button
+                                  type="button"
+                                  key={id}
+                                  aria-pressed={decision === id}
+                                  className={decision === id ? 'chosen' : ''}
+                                  onClick={() => setDecision(id)}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                            {decision === 'update' && (
+                              <label>
+                                Verified statement
+                                <textarea
+                                  required
+                                  rows={5}
+                                  value={statement}
+                                  maxLength={8000}
+                                  onChange={e => setStatement(e.target.value)}
+                                />
+                              </label>
+                            )}
+                            <label>
+                              Reason for decision
+                              <input
+                                required
+                                maxLength={1000}
+                                placeholder="What did you verify?"
+                                value={reason}
+                                onChange={e => setReason(e.target.value)}
+                              />
+                            </label>
+                            <div className="decision-footer">
+                              <small>Recorded as {data.user.name}</small>
+                              <Button disabled={busy}>
+                                <Check size={17} />
+                                Confirm {decision}
+                              </Button>
+                            </div>
+                            <div className="review-tools">
+                              <select
+                                aria-label="Assign reviewer"
+                                value={review.assignedTo || ''}
+                                onChange={e =>
+                                  run(() =>
+                                    mutate(`reviews/${review.id}/manage`, { assignedTo: e.target.value }, 'Reviewer assigned.'),
+                                  )
+                                }
+                              >
+                                <option value="" disabled>
+                                  Assign reviewer
+                                </option>
+                                {data.members
+                                  .filter(m => can(m.role, 'review'))
+                                  .map(m => (
+                                    <option key={m.id} value={m.id}>
+                                      {m.name}
+                                    </option>
+                                  ))}
+                              </select>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                disabled={busy}
+                                onClick={() =>
+                                  run(() =>
+                                    mutate(
+                                      `reviews/${review.id}/manage`,
+                                      { snoozedUntil: new Date(Date.now() + 86400000).toISOString() },
+                                      'Snoozed for one day.',
+                                    ),
+                                  )
+                                }
+                              >
+                                Snooze 1 day
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                disabled={busy || !reason.trim()}
+                                onClick={() =>
+                                  run(() =>
+                                    mutate(
+                                      `reviews/${review.id}/manage`,
+                                      { evidenceRequested: reason },
+                                      'Request recorded on this review.',
+                                    ),
+                                  )
+                                }
+                              >
+                                Request evidence
+                              </Button>
+                            </div>
+                            {review.evidenceRequested && (
+                              <p className="warning">Evidence requested: {review.evidenceRequested}</p>
+                            )}
+                          </form>
+                        ) : (
+                          <p className="panel-footer">A reviewer, admin, or owner can resolve this change.</p>
+                        )}
+                      </section>
+                    </div>
+                  )}
+                  {allPending.some(r => r.snoozedUntil && Date.parse(r.snoozedUntil) > Date.now()) && (
+                    <section className="panel">
+                      <div className="section-heading">
+                        <h2>Snoozed reviews</h2>
+                      </div>
+                      {allPending
+                        .filter(r => r.snoozedUntil && Date.parse(r.snoozedUntil) > Date.now())
+                        .map(r => (
+                          <div className="attention-row" key={r.id}>
+                            <strong>{cards.find(c => c.id === r.cardId)?.title}</strong>
+                            <span>Returns {date(r.snoozedUntil!)}</span>
+                          </div>
+                        ))}
+                    </section>
+                  )}
+                </>
+              )}
+              {view === 'evidence' && (
+                <section className="panel">
+                  {data.evidence.length ? (
+                    data.evidence
+                      .slice()
+                      .reverse()
+                      .map(e => (
+                        <article className="evidence-row" key={e.id}>
+                          <span className="row-icon">
+                            <FileText />
+                          </span>
+                          <div className="evidence-content">
+                            <h3>{e.name}</h3>
+                            <p className="muted">
+                              {cards.find(c => c.id === e.cardId)?.title} · {date(e.createdAt)} · {(e.size / 1024).toFixed(1)} KB
+                            </p>
+                            <details>
+                              <summary>Source text & provenance</summary>
+                              <p className="extracted">{e.text}</p>
+                              <dl>
+                                <dt>Submitted by</dt>
+                                <dd>{data.members.find(m => m.id === e.submittedBy)?.name || e.submittedBy}</dd>
+                                <dt>SHA-256</dt>
+                                <dd className="hash">{e.contentHash}</dd>
+                                <dt>Authority</dt>
+                                <dd>{e.trustMetadata.authority}</dd>
+                              </dl>
+                            </details>
+                          </div>
+                          <div className="evidence-actions">
+                            <a className="icon-button" aria-label={`Download ${e.name}`} href={`/api/evidence/${e.id}`}>
+                              <ArrowDownToLine size={18} />
+                            </a>
+                            {allowed('ingest') && (
+                              <Button
+                                variant="secondary"
+                                disabled={busy || cards.find(c => c.id === e.cardId)?.status === 'archived'}
+                                onClick={() => run(() => compare(e))}
+                              >
+                                Compare <ArrowRight size={16} />
+                              </Button>
+                            )}
+                          </div>
+                        </article>
+                      ))
+                  ) : (
+                    <Empty title="Every change starts with evidence">
+                      Upload a TXT, Markdown, or text-based PDF. Originals stay linked to their reviews.
+                    </Empty>
+                  )}
+                </section>
+              )}
+              {view === 'ask' && (
+                <section className="ask-surface">
+                  <div className="ask-emblem">
+                    <MessageSquare size={30} />
+                  </div>
+                  <h2>What does your team know now?</h2>
+                  <p className="muted">Current versions. Verified sources. A history you can follow.</p>
+                  <form
+                    className="ask-input"
+                    onSubmit={e => {
+                      e.preventDefault();
+                      run(async () => setAnswer(await api<Answer>('ask', { question })));
+                    }}
+                  >
+                    <input
+                      aria-label="Your question"
+                      required
+                      maxLength={1000}
+                      value={question}
+                      onChange={e => setQuestion(e.target.value)}
+                      placeholder="How should engineers handle Service X after deployment?"
+                    />
+                    <Button disabled={busy} aria-label="Ask question">
+                      <ArrowRight size={20} />
+                    </Button>
+                  </form>
+                  <button
+                    className="suggested-question"
+                    onClick={() => setQuestion('How should engineers handle Service X after a successful payment deployment?')}
+                  >
+                    Service X after deployment <ArrowUpRight size={14} />
+                  </button>
+                  {answer && (
+                    <div className="panel answer" aria-live="polite">
+                      <span className="eyebrow">FROM CURRENT VERIFIED KNOWLEDGE</span>
+                      <p>{answer.text}</p>
+                      <div className="citations">
+                        {answer.citations.map((c, i) => (
+                          <a key={c.cardId} href={`/knowledge/${c.cardId}`}>
+                            <Badge>{i + 1}</Badge>
+                            <div>
+                              <strong>
+                                {c.title} · v{c.version}
+                              </strong>
+                              <small>
+                                {c.source} · Verified {date(c.verifiedAt)}
+                              </small>
+                            </div>
+                            <ArrowUpRight size={16} />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <p className="ask-footnote">
+                    <ShieldCheck size={15} />
+                    Archived and expired knowledge is excluded. Answers quote sources directly.
+                  </p>
+                </section>
+              )}
+              {view === 'audit' &&
+                (allowed('audit') ? (
+                  <section className="panel audit-table">
+                    <div className="table-heading">
+                      <span>EVENT / PERSON</span>
+                      <span>DATE / REQUEST</span>
+                    </div>
+                    {data.audit
+                      .slice()
+                      .reverse()
+                      .map(e => (
+                        <details key={e.id}>
+                          <summary>
+                            <div>
+                              <strong>{relation(e.action.replaceAll('.', '_'))}</strong>
+                              <small>
+                                {e.actorName} · {e.entityId}
+                              </small>
+                            </div>
+                            <div>
+                              <span>{date(e.timestamp)}</span>
+                              <small>{e.requestId.slice(0, 8)}</small>
+                            </div>
+                          </summary>
+                          <pre>
+                            {JSON.stringify(
+                              { before: e.before, after: e.after, requestId: e.requestId, timestamp: e.timestamp },
+                              null,
+                              2,
+                            )}
+                          </pre>
+                        </details>
+                      ))}
+                    {!data.audit.length && <Empty title="No events yet">Account and knowledge changes will appear here.</Empty>}
+                  </section>
+                ) : (
+                  <p className="error">Your role does not include audit access.</p>
+                ))}
+              {view === 'settings' && (
+                <>
+                  <div className="tabs">
+                    {['profile', 'security', 'organization', 'integrations'].map(s => (
+                      <a className={(selected || 'profile') === s ? 'selected' : ''} key={s} href={`/settings/${s}`}>
+                        {s}
+                      </a>
+                    ))}
+                  </div>
+                  {(!selected || selected === 'profile') && (
+                    <section className="panel settings-panel">
+                      <h2>Your profile</h2>
+                      <form
+                        onSubmit={e => {
+                          e.preventDefault();
+                          const f = new FormData(e.currentTarget);
+                          run(() =>
+                            mutate(
+                              'account/profile',
+                              {
+                                name: f.get('name'),
+                                timezone: f.get('timezone'),
+                                notifications: f.get('notifications') === 'on',
+                              },
+                              'Profile saved.',
+                            ),
+                          );
+                        }}
+                      >
+                        <label>
+                          Name
+                          <input name="name" required maxLength={100} defaultValue={data.user.name} />
+                        </label>
+                        <label>
+                          Email
+                          <input value={data.user.email} readOnly />
+                        </label>
+                        <label>
+                          Timezone
+                          <input name="timezone" required defaultValue={data.user.timezone} />
+                        </label>
+                        <label className="checkbox">
+                          <input name="notifications" type="checkbox" defaultChecked={data.user.notifications} />
+                          Review notification preference (delivery is planned)
+                        </label>
+                        <Button disabled={busy}>Save profile</Button>
+                      </form>
+                    </section>
+                  )}
+                  {selected === 'security' && (
+                    <section className="panel settings-panel">
+                      <h2>Account security</h2>
+                      <p className="muted">
+                        Signed sessions expire after 8 hours. Sensitive changes require a sign-in within the last 15 minutes.
+                      </p>
+                      {data.user.identityProvider === 'local' ? (
+                        <form
+                          onSubmit={e => {
+                            e.preventDefault();
+                            const f = Object.fromEntries(new FormData(e.currentTarget));
+                            run(async () => {
+                              await api('account/password', f);
+                              await signOut({ callbackUrl: '/login' });
+                            });
+                          }}
+                        >
+                          <label>
+                            Current password
+                            <input name="currentPassword" type="password" required autoComplete="current-password" />
+                          </label>
+                          <label>
+                            New password
+                            <input
+                              name="password"
+                              type="password"
+                              minLength={12}
+                              maxLength={128}
+                              required
+                              autoComplete="new-password"
+                            />
+                          </label>
+                          <Button disabled={busy}>Change password</Button>
+                          <p className="muted">
+                            MFA and passkeys are provided through configured Cognito managed sign-in. Local credentials do not
+                            offer these factors.
+                          </p>
+                        </form>
+                      ) : (
+                        <p>
+                          Use your organization’s Cognito sign-in to manage password recovery and the configured MFA or passkey
+                          flow.
+                        </p>
+                      )}
+                      <Button
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() =>
+                          run(async () => {
+                            await api('account/revoke-sessions', {});
+                            await signOut({ callbackUrl: '/login' });
+                          })
+                        }
+                      >
+                        Sign out all devices
+                      </Button>
+                    </section>
+                  )}
+                  {selected === 'organization' && (
+                    <section className="panel settings-panel">
+                      <h2>{data.organization.name}</h2>
+                      {allowed('admin') && (
+                        <>
+                          <form
+                            onSubmit={e => {
+                              e.preventDefault();
+                              run(() =>
+                                mutate(
+                                  'organization/settings',
+                                  Object.fromEntries(new FormData(e.currentTarget)),
+                                  'Organization updated.',
+                                ),
+                              );
+                            }}
+                          >
+                            <label>
+                              Organization name
+                              <input name="name" required maxLength={100} defaultValue={data.organization.name} />
+                            </label>
+                            <Button disabled={busy}>Save organization</Button>
+                          </form>
+                          <h3>Invite a teammate</h3>
+                          <form
+                            onSubmit={e => {
+                              e.preventDefault();
+                              const body = Object.fromEntries(new FormData(e.currentTarget));
+                              run(async () => {
+                                const r = await api<{ url: string }>('organization/invite', body);
+                                setInviteUrl(r.url);
+                                await refresh();
+                              });
+                            }}
+                          >
+                            <label>
+                              Email
+                              <input name="email" type="email" required />
+                            </label>
+                            <label>
+                              Role
+                              <select name="role">
+                                {[
+                                  'Reviewer',
+                                  'Editor',
+                                  'Viewer',
+                                  'Auditor',
+                                  ...(data.user.role === 'Owner' ? ['Admin'] : []),
+                                ].map(r => (
+                                  <option key={r}>{r}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <Button disabled={busy}>Create invitation link</Button>
+                          </form>
+                          {inviteUrl && (
+                            <label>
+                              Share this invitation with your teammate
+                              <input readOnly value={inviteUrl} onFocus={e => e.target.select()} />
+                            </label>
+                          )}
+                        </>
+                      )}
+                      <h3>Members</h3>
+                      {data.members.map(m => (
+                        <div className="member-row" key={m.id}>
+                          <span className="avatar">{m.name.slice(0, 2).toUpperCase()}</span>
+                          <div>
+                            <strong>{m.name}</strong>
+                            <small>{m.email}</small>
+                          </div>
+                          {allowed('admin') && m.id !== data.user.id && m.role !== 'Owner' ? (
+                            <select
+                              aria-label={`Role for ${m.name}`}
+                              value={m.role}
+                              disabled={busy}
+                              onChange={e =>
+                                run(() =>
+                                  mutate(
+                                    'organization/role',
+                                    { email: m.email, role: e.target.value },
+                                    'Role updated. Existing sessions were revoked.',
+                                  ),
+                                )
+                              }
+                            >
+                              {['Reviewer', 'Editor', 'Viewer', 'Auditor', ...(data.user.role === 'Owner' ? ['Admin'] : [])].map(
+                                r => (
+                                  <option key={r}>{r}</option>
+                                ),
+                              )}
+                            </select>
+                          ) : (
+                            <Badge>{m.role}</Badge>
+                          )}
+                        </div>
+                      ))}
+                    </section>
+                  )}
+                  {selected === 'integrations' && (
+                    <div className="integration-grid">
+                      {['GitHub', 'Slack', 'Notion', 'Google Drive', 'Jira', 'Confluence'].map((name, i) => (
+                        <section className="panel integration-card" key={name}>
+                          <FolderOpen size={26} />
+                          <h2>{name}</h2>
+                          <p>Bring source updates into human-reviewed knowledge.</p>
+                          <Badge>Planned · Phase {i < 4 ? '2' : '3'}</Badge>
+                        </section>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+          <footer>
+            <GitBranch size={15} />
+            Git tracks how code changes. Echo tracks how knowledge changes.
+            <span>
+              {data?.mode.ai === 'demo'
+                ? 'Demo rules · No live AI'
+                : data?.mode.ai === 'bedrock'
+                  ? 'Bedrock configured'
+                  : 'Groq configured'}
+            </span>
+          </footer>
+        </main>
+      </div>
+      {notice && (
+        <div className="toast" role="status">
+          <Check size={18} />
+          {notice}
+        </div>
+      )}
+      <Dialog
+        title={
+          modal === 'card'
+            ? 'Capture verified knowledge'
+            : modal === 'rollback'
+              ? 'Restore a previous version'
+              : 'Add new evidence'
+        }
+        open={!!modal}
+        onClose={() => !busy && setModal(null)}
+      >
+        {modal === 'evidence' && (
+          <form className="modal-body" onSubmit={upload}>
+            <p className="muted">Compare a source against current knowledge. A human decides what changes.</p>
+            <label>
+              Knowledge card
+              <select value={cardId} onChange={e => setCardId(e.target.value)}>
+                {active.map(c => (
+                  <option value={c.id} key={c.id}>
+                    {c.title} · v{c.version}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label
+              className="dropzone"
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => {
+                e.preventDefault();
+                setFile(e.dataTransfer.files[0] || null);
+              }}
+            >
+              <Upload size={25} />
+              <strong>{file?.name || 'Drop a document or choose a file'}</strong>
+              <small>TXT, Markdown, PDF · Up to 2 MB</small>
+              <input
+                type="file"
+                aria-label="Choose evidence file"
+                accept=".txt,.md,.pdf"
+                onChange={e => setFile(e.target.files?.[0] || null)}
+              />
+            </label>
+            {file ? (
+              <Button type="button" variant="ghost" onClick={() => setFile(null)}>
+                Use pasted text instead
+              </Button>
+            ) : (
+              <>
+                <label>
+                  Source name
+                  <input required value={sourceName} onChange={e => setSourceName(e.target.value)} maxLength={160} />
+                </label>
+                <label>
+                  Evidence text
+                  <textarea
+                    rows={5}
+                    required
+                    minLength={10}
+                    maxLength={30000}
+                    value={evidenceText}
+                    onChange={e => setEvidenceText(e.target.value)}
+                  />
+                </label>
+              </>
+            )}
+            <button
+              type="button"
+              className="source-link"
+              onClick={() => {
+                setCardId('payment-deployment');
+                setFile(null);
+                setEvidenceText(sample);
+                setSourceName('deployment-update-groq.txt');
+              }}
+            >
+              Use the Service X example <ArrowRight size={15} />
+            </button>
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+            <Button disabled={busy || !active.some(c => c.id === cardId)}>
+              {busy ? 'Comparing…' : 'Compare evidence'}
+              <ArrowRight size={16} />
+            </Button>
+          </form>
+        )}
+        {modal === 'card' && (
+          <form
+            className="modal-body"
+            onSubmit={e => {
+              e.preventDefault();
+              const body = Object.fromEntries(new FormData(e.currentTarget));
+              run(async () => {
+                const c = await api<Card>('knowledge', body);
+                await refresh();
+                setModal(null);
+                go(`/knowledge/${c.id}`);
+              });
+            }}
+          >
+            <label>
+              Title
+              <input name="title" required maxLength={120} />
+            </label>
+            <div className="form-row">
+              <label>
+                Topic
+                <input name="topic" required maxLength={80} />
+              </label>
+              <label>
+                Owner
+                <input name="owner" required defaultValue={data?.user.name} maxLength={100} />
+              </label>
+            </div>
+            <label>
+              Verified statement
+              <textarea name="statement" required rows={4} maxLength={8000} />
+            </label>
+            <label>
+              Source
+              <input name="source" required maxLength={200} />
+            </label>
+            <div className="form-row">
+              <label>
+                Review frequency
+                <select name="volatility">
+                  <option value="high">30 days</option>
+                  <option value="medium">90 days</option>
+                  <option value="low">365 days</option>
+                  <option value="event">Event-triggered</option>
+                </select>
+              </label>
+              <label>
+                Sensitivity
+                <select name="sensitivity">
+                  {['Internal', 'Public', 'Confidential', 'Restricted'].map(v => (
+                    <option key={v}>{v}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+            <Button disabled={busy}>Create verified card</Button>
+          </form>
+        )}
+        {modal === 'rollback' && card && (
+          <form
+            className="modal-body"
+            onSubmit={e => {
+              e.preventDefault();
+              run(async () => {
+                await mutate(
+                  `knowledge/${card.id}/rollback`,
+                  { expectedVersion: card.version, version: rollbackVersion, reason },
+                  `Created version ${card.version + 1} from version ${rollbackVersion}.`,
+                );
+                setModal(null);
+                setAnswer(undefined);
+              });
+            }}
+          >
+            <p>Version {rollbackVersion} will become a new version. Existing history stays intact.</p>
+            <label>
+              Reason
+              <input required maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} />
+            </label>
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+            <Button disabled={busy}>Create version {card.version + 1}</Button>
+          </form>
+        )}
+      </Dialog>
+    </div>
+  );
+}
+function Stat({
+  label,
+  value,
+  detail,
+  icon,
+  accent = false,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  icon: ReactNode;
+  accent?: boolean;
+}) {
+  return (
+    <div className={`stat ${accent ? 'accent' : ''}`}>
+      <div>
+        <span>{label}</span>
+        {icon}
+      </div>
+      <strong>{value.toString().padStart(2, '0')}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+function CardRow({ card, pending }: { card: Card; pending: boolean }) {
+  return (
+    <a className="knowledge-row" href={`/knowledge/${card.id}`}>
+      <span className="row-icon">
+        <FileText size={21} />
+      </span>
+      <div className="row-text">
+        <strong>{card.title}</strong>
+        <small>
+          {card.topic} · {card.owner}
+        </small>
+      </div>
+      <div className="row-status">
+        <Badge kind={card.status === 'archived' ? 'neutral' : pending ? 'amber' : 'green'}>
+          {card.status === 'archived' ? 'Archived' : pending ? 'Needs review' : 'Verified'}
+        </Badge>
+        <small>
+          v{card.version} · {date(card.updatedAt)}
+        </small>
+      </div>
+      <ChevronRight size={17} />
+    </a>
+  );
+}

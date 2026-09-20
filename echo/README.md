@@ -89,14 +89,14 @@ Production: Amplify/CloudFront → Next.js server → IAM-signed API Gateway →
 
 ## Roles
 
-| Role | Read | Submit evidence | Create verified card | Decide / rollback | Audit | Admin |
-|---|---|---|---|---|---|---|
-| Owner | yes | yes | yes | yes | yes | yes |
-| Admin | yes | yes | yes | yes | yes | yes |
-| Reviewer | yes | yes | yes | yes | no | no |
-| Editor | yes | yes | no | no | no | no |
-| Viewer | yes | no | no | no | no | no |
-| Auditor | yes | no | no | no | yes | no |
+| Role     | Read | Submit evidence | Create verified card | Decide / rollback | Audit | Admin |
+| -------- | ---- | --------------- | -------------------- | ----------------- | ----- | ----- |
+| Owner    | yes  | yes             | yes                  | yes               | yes   | yes   |
+| Admin    | yes  | yes             | yes                  | yes               | yes   | yes   |
+| Reviewer | yes  | yes             | yes                  | yes               | no    | no    |
+| Editor   | yes  | yes             | no                   | no                | no    | no    |
+| Viewer   | yes  | no              | no                   | no                | no    | no    |
+| Auditor  | yes  | no              | no                   | no                | yes   | no    |
 
 Editors can submit evidence but cannot declare it canonical. Role changes revoke existing sessions. Invitations are short-lived, email-bound links; they are not emailed automatically.
 
