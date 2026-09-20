@@ -11,6 +11,7 @@ import {
   verifyPassword,
   passwordHash,
   sendVerification,
+  localVerificationEnabled,
 } from '@/lib/auth/accounts';
 import { checkOrigin, readJson, rateLimit } from '@/lib/auth/security';
 import { requireActor, requireRecentLogin } from '@/lib/auth/session';
@@ -36,20 +37,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           .strict(),
         body,
       );
-      if (
-        !process.env.EMAIL_FROM &&
-        !(process.env.ECHO_LOCAL_MAIL === 'true' && process.env.NODE_ENV !== 'production' && process.env.ECHO_STORAGE !== 'aws')
-      )
+      if (!process.env.EMAIL_FROM && !localVerificationEnabled())
         throw new AppError(503, 'Email verification is not configured. Use Cognito signup or configure email delivery.');
       const { code } = await createAccount({ ...input, provider: 'local' });
       return NextResponse.json(
         {
           ok: true,
-          ...(process.env.ECHO_LOCAL_MAIL === 'true' &&
-          process.env.NODE_ENV !== 'production' &&
-          process.env.ECHO_STORAGE !== 'aws'
-            ? { localVerificationToken: code }
-            : {}),
+          ...(localVerificationEnabled() ? { localVerificationToken: code } : {}),
         },
         { status: 201 },
       );

@@ -3,7 +3,15 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { store, SqliteStore } from '../../lib/db/store';
-import { account, createAccount, passwordHash, verifyPassword, saveUser, members } from '../../lib/auth/accounts';
+import {
+  account,
+  createAccount,
+  localVerificationEnabled,
+  passwordHash,
+  verifyPassword,
+  saveUser,
+  members,
+} from '../../lib/auth/accounts';
 import { rateLimit } from '../../lib/auth/security';
 import { organizationAction } from '../../lib/service/organization';
 import type { Actor } from '../../lib/auth/rbac';
@@ -47,6 +55,21 @@ it('durable limits survive calls and reject over-limit requests', async () => {
   await rateLimit('test', 2, 3600);
   await rateLimit('test', 2, 3600);
   await expect(rateLimit('test', 2, 3600)).rejects.toMatchObject({ status: 429 });
+});
+it('local verification stays enabled in CI production mode for non-AWS storage', () => {
+  const { NODE_ENV, CI, ECHO_STORAGE, ECHO_LOCAL_MAIL } = process.env;
+  process.env.NODE_ENV = 'production';
+  process.env.CI = 'true';
+  process.env.ECHO_STORAGE = 'sqlite';
+  process.env.ECHO_LOCAL_MAIL = 'true';
+  try {
+    expect(localVerificationEnabled()).toBe(true);
+  } finally {
+    process.env.NODE_ENV = NODE_ENV;
+    process.env.CI = CI;
+    process.env.ECHO_STORAGE = ECHO_STORAGE;
+    process.env.ECHO_LOCAL_MAIL = ECHO_LOCAL_MAIL;
+  }
 });
 it('invitation tokens bind the email and role; role changes invalidate sessions', async () => {
   const own = (await account('owner@example.test'))!;
