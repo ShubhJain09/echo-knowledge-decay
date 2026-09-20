@@ -17,7 +17,10 @@
     "db:setup": "prisma generate && node scripts/prepare-sqlite.mjs && prisma migrate deploy",
     "seed": "node --import tsx scripts/seed.ts",
     "cdk": "cdk --app \"node --import tsx infra/app.ts\"",
-    "eval": "node --import tsx scripts/eval.ts"
+    "eval": "node --import tsx scripts/eval.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.800.0",
@@ -62,6 +65,7 @@
     "constructs": "^10.8.1",
     "esbuild": "^0.28.2",
     "jsdom": "^30.1.0",
+    "prettier": "^3.6.2",
     "prisma": "^6.19.3",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.20.0",

@@ -1,15 +1,142 @@
 import type { Role } from './auth/rbac';
 export type CardStatus = 'verified' | 'archived';
-export type Relation = 'contradiction' | 'process_change' | 'environment_change' | 'dependency_change' | 'time_sensitive' | 'adds_context' | 'consistent' | 'unrelated';
+export type Relation =
+  | 'contradiction'
+  | 'process_change'
+  | 'environment_change'
+  | 'dependency_change'
+  | 'time_sensitive'
+  | 'adds_context'
+  | 'consistent'
+  | 'unrelated';
 export type Decision = 'update' | 'keep' | 'archive';
-export interface Version { organizationId: string; version: number; statement: string; source: string; createdAt: string; author: string; note: string; evidenceId?: string; status: CardStatus; supersedesVersion?: number; rollbackFrom?: number }
-export interface Card { organizationId: string; id: string; title: string; topic: string; owner: string; status: CardStatus; version: number; statement: string; source: string; updatedAt: string; history: Version[]; lastVerifiedAt: string; nextReviewAt: string | null; volatility: 'high'|'medium'|'low'|'event'; sensitivity: 'Public'|'Internal'|'Confidential'|'Restricted'; validFrom?: string; validUntil?: string }
-export interface Evidence { organizationId: string; id: string; name: string; mime: string; text: string; createdAt: string; size: number; cardId: string; contentHash: string; submittedBy: string; storageKey: string; trustMetadata: { authority: string; independentSources: number } }
-export interface Comparison { relation: Relation; needsReview: boolean; explanation: string; oldQuote: string; newQuote: string; proposedStatement: string; engine: 'demo' | 'bedrock' | 'groq' | 'policy' }
-export interface Review extends Comparison { organizationId: string; id: string; cardId: string; cardVersion: number; evidenceId: string; evidenceName: string; createdAt: string; status: 'pending' | 'resolved'; decision?: Decision; resolvedAt?: string; reviewer?: string; note?: string; assignedTo?: string; snoozedUntil?: string; evidenceRequested?: string; priority: 'high'|'medium'|'low' }
-export interface AuditEvent { id: string; organizationId: string; actorId: string; actorName: string; action: string; entityType: string; entityId: string; before: unknown; after: unknown; timestamp: string; requestId: string }
-export interface Organization { id: string; organizationId: string; name: string; slug: string; createdAt: string; plan: string; settings: { defaultReviewDays: number } }
-export interface User { id: string; organizationId: string; name: string; email: string; role: Role; status: 'pending'|'active'|'disabled'; avatar: string; createdAt: string; lastSeenAt: string; sessionVersion: number; timezone: string; notifications: boolean; passwordHash?: string; verificationHash?: string; verificationExpires?: string; identityProvider: 'local'|'cognito' }
-export interface Data { cards: Card[]; reviews: Review[]; evidence: Evidence[]; audit: AuditEvent[] }
-export interface Snapshot extends Data { mode: { storage: string; ai: string }; user: Omit<User,'passwordHash'|'verificationHash'>; organization: Organization; members: Omit<User,'passwordHash'|'verificationHash'>[] }
-export interface Answer { text: string; engine: 'demo'|'bedrock'|'groq'|'extractive'; citations: { cardId: string; title: string; version: number; source: string; verifiedAt: string }[] }
+export interface Version {
+  organizationId: string;
+  version: number;
+  statement: string;
+  source: string;
+  createdAt: string;
+  author: string;
+  note: string;
+  evidenceId?: string;
+  status: CardStatus;
+  supersedesVersion?: number;
+  rollbackFrom?: number;
+}
+export interface Card {
+  organizationId: string;
+  id: string;
+  title: string;
+  topic: string;
+  owner: string;
+  status: CardStatus;
+  version: number;
+  statement: string;
+  source: string;
+  updatedAt: string;
+  history: Version[];
+  lastVerifiedAt: string;
+  nextReviewAt: string | null;
+  volatility: 'high' | 'medium' | 'low' | 'event';
+  sensitivity: 'Public' | 'Internal' | 'Confidential' | 'Restricted';
+  validFrom?: string;
+  validUntil?: string;
+}
+export interface Evidence {
+  organizationId: string;
+  id: string;
+  name: string;
+  mime: string;
+  text: string;
+  createdAt: string;
+  size: number;
+  cardId: string;
+  contentHash: string;
+  submittedBy: string;
+  storageKey: string;
+  trustMetadata: { authority: string; independentSources: number };
+}
+export interface Comparison {
+  relation: Relation;
+  needsReview: boolean;
+  explanation: string;
+  oldQuote: string;
+  newQuote: string;
+  proposedStatement: string;
+  engine: 'demo' | 'bedrock' | 'groq' | 'policy';
+}
+export interface Review extends Comparison {
+  organizationId: string;
+  id: string;
+  cardId: string;
+  cardVersion: number;
+  evidenceId: string;
+  evidenceName: string;
+  createdAt: string;
+  status: 'pending' | 'resolved';
+  decision?: Decision;
+  resolvedAt?: string;
+  reviewer?: string;
+  note?: string;
+  assignedTo?: string;
+  snoozedUntil?: string;
+  evidenceRequested?: string;
+  priority: 'high' | 'medium' | 'low';
+}
+export interface AuditEvent {
+  id: string;
+  organizationId: string;
+  actorId: string;
+  actorName: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  before: unknown;
+  after: unknown;
+  timestamp: string;
+  requestId: string;
+}
+export interface Organization {
+  id: string;
+  organizationId: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  plan: string;
+  settings: { defaultReviewDays: number };
+}
+export interface User {
+  id: string;
+  organizationId: string;
+  name: string;
+  email: string;
+  role: Role;
+  status: 'pending' | 'active' | 'disabled';
+  avatar: string;
+  createdAt: string;
+  lastSeenAt: string;
+  sessionVersion: number;
+  timezone: string;
+  notifications: boolean;
+  passwordHash?: string;
+  verificationHash?: string;
+  verificationExpires?: string;
+  identityProvider: 'local' | 'cognito';
+}
+export interface Data {
+  cards: Card[];
+  reviews: Review[];
+  evidence: Evidence[];
+  audit: AuditEvent[];
+}
+export interface Snapshot extends Data {
+  mode: { storage: string; ai: string };
+  user: Omit<User, 'passwordHash' | 'verificationHash'>;
+  organization: Organization;
+  members: Omit<User, 'passwordHash' | 'verificationHash'>[];
+}
+export interface Answer {
+  text: string;
+  engine: 'demo' | 'bedrock' | 'groq' | 'extractive';
+  citations: { cardId: string; title: string; version: number; source: string; verifiedAt: string }[];
+}

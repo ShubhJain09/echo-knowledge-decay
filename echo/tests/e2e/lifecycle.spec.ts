@@ -1,14 +1,51 @@
-import { test,expect } from '@playwright/test';
-test('signup → verification → organization → evidence → review → history → current answer',async({page})=>{
- const email=`echo-${Date.now()}@example.test`;
- await page.goto('/signup');await page.getByLabel('Your name').fill('Rahul');await page.getByLabel('Organization name').fill('Payments Engineering');await page.getByLabel('Email',{exact:true}).fill(email);await page.getByLabel('Password',{exact:true}).fill('Echo-testing-password-2026');await page.getByRole('button',{name:'Create account'}).click();
- await expect(page).toHaveURL(/\/verify\?/);await page.getByRole('button',{name:'Verify email'}).click();await page.getByRole('link',{name:'Continue to sign in'}).click();await page.getByLabel('Email',{exact:true}).fill(email);await page.getByLabel('Password',{exact:true}).fill('Echo-testing-password-2026');await page.getByRole('button',{name:'Sign in',exact:true}).click();
- await expect(page.getByRole('heading',{name:'Your knowledge, in focus.'})).toBeVisible();await page.getByRole('button',{name:'Load example workspace'}).click();await expect(page.getByText('The Service X example is ready.')).toBeVisible();
- await page.getByRole('button',{name:'Add evidence'}).click();await page.getByRole('button',{name:'Use the Service X example'}).click();await page.getByRole('button',{name:'Compare evidence',exact:true}).click();
- await expect(page.getByRole('heading',{name:'Changes worth a closer look.'})).toBeVisible();await expect(page.getByText('Exact quotes verified')).toBeVisible();await page.getByLabel('Reason for decision').fill('Verified automated restart and incident response fallback.');await page.getByRole('button',{name:'Confirm update'}).click();
- await expect(page.getByRole('heading',{name:'Version history'})).toBeVisible();await expect(page.getByText('Version 2',{exact:true})).toBeVisible();await expect(page.getByText('Version 1',{exact:true})).toBeVisible();await expect(page.getByText('Archived',{exact:true})).toBeVisible();
- await page.getByRole('link',{name:'Ask Echo',exact:true}).click();await page.getByRole('textbox',{name:'Your question'}).fill('How should engineers handle Service X after a successful payment deployment?');await page.getByRole('button',{name:'Ask question'}).click();
- const answer=page.locator('.answer');await expect(answer).toContainText('automatically restarts');await expect(answer).toContainText('v2');await expect(answer).not.toContainText('Manually restart Service X');await expect(answer).toContainText('Verified');
- await page.goto('/dashboard');await page.screenshot({path:'output/screenshots/echo-dashboard.png',fullPage:true});await page.setViewportSize({width:390,height:844});await page.screenshot({path:'output/screenshots/echo-mobile.png',fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+import { test, expect } from '@playwright/test';
+test('signup → verification → organization → evidence → review → history → current answer', async ({ page }) => {
+  const email = `echo-${Date.now()}@example.test`;
+  await page.goto('/signup');
+  await page.getByLabel('Your name').fill('Rahul');
+  await page.getByLabel('Organization name').fill('Payments Engineering');
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  await page.getByLabel('Password', { exact: true }).fill('Echo-testing-password-2026');
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await expect(page).toHaveURL(/\/verify\?/);
+  await page.getByRole('button', { name: 'Verify email' }).click();
+  await page.getByRole('link', { name: 'Continue to sign in' }).click();
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  await page.getByLabel('Password', { exact: true }).fill('Echo-testing-password-2026');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your knowledge, in focus.' })).toBeVisible();
+  await page.getByRole('button', { name: 'Load example workspace' }).click();
+  await expect(page.getByText('The Service X example is ready.')).toBeVisible();
+  await page.getByRole('button', { name: 'Add evidence' }).click();
+  await page.getByRole('button', { name: 'Use the Service X example' }).click();
+  await page.getByRole('button', { name: 'Compare evidence', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Changes worth a closer look.' })).toBeVisible();
+  await expect(page.getByText('Exact quotes verified')).toBeVisible();
+  await page.getByLabel('Reason for decision').fill('Verified automated restart and incident response fallback.');
+  await page.getByRole('button', { name: 'Confirm update' }).click();
+  await expect(page.getByRole('heading', { name: 'Version history' })).toBeVisible();
+  await expect(page.getByText('Version 2', { exact: true })).toBeVisible();
+  await expect(page.getByText('Version 1', { exact: true })).toBeVisible();
+  await expect(page.getByText('Archived', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Ask Echo', exact: true }).click();
+  await page
+    .getByRole('textbox', { name: 'Your question' })
+    .fill('How should engineers handle Service X after a successful payment deployment?');
+  await page.getByRole('button', { name: 'Ask question' }).click();
+  const answer = page.locator('.answer');
+  await expect(answer).toContainText('automatically restarts');
+  await expect(answer).toContainText('v2');
+  await expect(answer).not.toContainText('Manually restart Service X');
+  await expect(answer).toContainText('Verified');
+  await page.goto('/dashboard');
+  await page.screenshot({ path: 'output/screenshots/echo-dashboard.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: 'output/screenshots/echo-mobile.png', fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
-test('anonymous and cross-origin writes are rejected',async({request})=>{const response=await request.get('/api/workspace');expect(response.status()).toBe(401);const signup=await request.post('/api/account/signup',{headers:{Origin:'https://attacker.example'},data:{}});expect(signup.status()).toBe(403);});
+test('anonymous and cross-origin writes are rejected', async ({ request }) => {
+  const response = await request.get('/api/workspace');
+  expect(response.status()).toBe(401);
+  const signup = await request.post('/api/account/signup', { headers: { Origin: 'https://attacker.example' }, data: {} });
+  expect(signup.status()).toBe(403);
+});

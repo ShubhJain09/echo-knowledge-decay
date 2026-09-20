@@ -8,9 +8,11 @@ This build continues the prototype referenced in the supplied documents. The ori
 - Account signup, development email verification, Auth.js credential login, revocable eight-hour sessions, password change and sign-out-all. Local passwords use salted scrypt.
 - Organizations, invitation links bound to a verified email, server-enforced Owner/Admin/Reviewer/Editor/Viewer/Auditor permissions.
 - Prisma/SQLite persistence, original evidence retention, SHA-256 deduplication per card, PDF/TXT/Markdown ingestion, size/encoding validation.
-- Stable Groq/Bedrock comparison contract, strict JSON and exact-substring quote validation, one constrained retry, typed failures and failure audit events. Demo mode is explicitly rule-based.
+- Stable Groq/Bedrock comparison contract, strict JSON and exact-substring quote validation, one constrained retry, typed failures and failure audit events. Demo mode is explicitly rule-based and whole-word matched; `npm run eval` fails on any mislabelled relation.
 - Atomic review/knowledge/audit transactions, conditional versions, update/keep/archive, assignment, snooze, evidence requests and rollback as a new version.
 - Immutable version records. Archived/current status derives from the canonical card pointer when reading history.
+- Audit records use one shape for every event (`{ cards, reviews }`), so exporters never branch on the payload.
+- Identity events (sign-in, profile, password, membership) append a single audit row instead of taking the tenant knowledge transaction, so they cannot contend with a concurrent review.
 - Current-only extractive answers with validated numbered citations, source/version/verification date and insufficient-evidence handling. Expired/future validity windows are excluded.
 - Dashboard, knowledge search and topic/owner/status/due filters, evidence library, version timeline, why-current panel, member/settings screens and audit center.
 - Manual freshness checks create idempotent policy reviews; no automatic scheduler is claimed.

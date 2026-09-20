@@ -18,8 +18,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run db:setup
+      - run: npm run format:check
       - run: npm run typecheck
       - run: npm test
+      - run: npm run eval
       - run: npm run check:infra
       - run: npm run build
       - run: npx playwright install --with-deps chromium

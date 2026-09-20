@@ -3,6 +3,10 @@ on: [push, pull_request]
 jobs:
   check:
     runs-on: ubuntu-latest
+    # The application lives in echo/; the repository root holds only docs.
+    defaults:
+      run:
+        working-directory: echo
     env:
       DATABASE_URL: file:./echo.db
       NEXTAUTH_SECRET: ci-test-secret-not-for-deployment-123456789
@@ -16,20 +20,24 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: echo/package-lock.json
       - run: npm ci
       - run: npm run db:setup
+      - run: npm run format:check
       - run: npm run typecheck
       - run: npm test
+      - run: npm run eval
       - run: npm run check:infra
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run dev -- --port 3001 > /tmp/echo-server.log 2>&1 &
       - run: node scripts/wait-for-server.mjs
       - run: npm run test:e2e
+      # upload-artifact is not a `run` step, so it does not inherit working-directory.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: browser-results
           path: |
-            test-results/
-            output/screenshots/
+            echo/test-results/
+            echo/output/screenshots/
