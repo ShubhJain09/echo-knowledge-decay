@@ -1,10 +1,9 @@
 import { beforeAll, afterAll, it, expect } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { NextRequest } from 'next/server';
 import { store, SqliteStore } from '../../lib/db/store';
-import { POST as accountPost } from '../../app/api/account/[action]/route';
 
 let root: string;
 let db: SqliteStore;
@@ -26,32 +25,46 @@ afterAll(async () => {
 });
 
 it('signup returns a local verification token in CI production mode for non-AWS storage', async () => {
-  const { NODE_ENV, CI, ECHO_STORAGE, ECHO_LOCAL_MAIL } = process.env;
-  process.env.NODE_ENV = 'production';
-  process.env.CI = 'true';
-  process.env.ECHO_STORAGE = 'sqlite';
-  process.env.ECHO_LOCAL_MAIL = 'true';
-  try {
-    const response = await accountPost(
-      new NextRequest('http://127.0.0.1:3001/api/account/signup', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:3001', host: '127.0.0.1:3001' },
-        body: JSON.stringify({
-          name: 'CI Owner',
-          email: 'ci-owner@example.test',
-          password: 'Long-password-2026',
-          organizationName: 'CI Workspace',
-        }),
-      }),
-      { params: Promise.resolve({ action: 'signup' }) },
-    );
-    expect(response.status).toBe(201);
-    const body = (await response.json()) as { localVerificationToken?: string };
-    expect(body.localVerificationToken).toHaveLength(48);
-  } finally {
-    process.env.NODE_ENV = NODE_ENV;
-    process.env.CI = CI;
-    process.env.ECHO_STORAGE = ECHO_STORAGE;
-    process.env.ECHO_LOCAL_MAIL = ECHO_LOCAL_MAIL;
-  }
+  const result = JSON.parse(
+    execFileSync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        '--input-type=module',
+        '--eval',
+        `
+          import { NextRequest } from 'next/server';
+          import { POST as accountPost } from './app/api/account/[action]/route.ts';
+          const response = await accountPost(
+            new NextRequest('http://127.0.0.1:3001/api/account/signup', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:3001', host: '127.0.0.1:3001' },
+              body: JSON.stringify({
+                name: 'CI Owner',
+                email: 'ci-owner@example.test',
+                password: 'Long-password-2026',
+                organizationName: 'CI Workspace',
+              }),
+            }),
+            { params: Promise.resolve({ action: 'signup' }) },
+          );
+          console.log(JSON.stringify({ status: response.status, body: await response.json() }));
+        `,
+      ],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          DATABASE_URL: `file:${root}/auth.db`,
+          ECHO_STORAGE: 'sqlite',
+          ECHO_LOCAL_MAIL: 'true',
+          NODE_ENV: 'production',
+          CI: 'true',
+        },
+      },
+    ).toString(),
+  ) as { status: number; body: { localVerificationToken?: string } };
+  expect(result.status).toBe(201);
+  expect(result.body.localVerificationToken).toHaveLength(48);
 });
