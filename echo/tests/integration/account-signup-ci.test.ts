@@ -1,10 +1,10 @@
 import { beforeAll, afterAll, it, expect } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { store, SqliteStore } from '../../lib/db/store';
+import { applyPrismaMigrations } from './fixtures/apply-prisma-migrations';
 
 let root: string;
 let db: SqliteStore;
@@ -14,10 +14,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = `file:${root}/auth.db`;
   process.env.ECHO_STORAGE = 'sqlite';
   process.env.ECHO_LOCAL_MAIL = 'true';
-  const migration = await readFile(path.join(process.cwd(), 'prisma/migrations/20260920000000_initial/migration.sql'), 'utf8');
-  const sqlite = new DatabaseSync(path.join(root, 'auth.db'));
-  sqlite.exec(migration);
-  sqlite.close();
+  await applyPrismaMigrations(path.join(root, 'auth.db'));
   db = store() as SqliteStore;
 });
 
