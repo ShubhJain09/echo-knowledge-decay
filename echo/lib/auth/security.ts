@@ -15,12 +15,15 @@ export function checkOrigin(origin: string | null, host: string | null) {
     return false;
   }
 }
-/** Durable fixed-window limits shared by workers; conditional writes fail closed. */
+/**
+ * Durable fixed-window limits shared by workers; conditional writes fail closed.
+ * Lost updates are retried with jitter so that genuinely concurrent requests from one user are counted
+ * rather than rejected: a bare compare-and-set retried only a few times returned 429 while under the limit.
+ */
 export async function rateLimit(key: string, limit: number, seconds: number) {
-  const now = Date.now();
-  const window = Math.floor(now / (seconds * 1000));
+  const window = Math.floor(Date.now() / (seconds * 1000));
   const pk = `RATE#${createHash('sha256').update(key).digest('hex')}`;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
     const old = await store().get<{ window: number; count: number }>(pk, 'RATE');
     const count = old?.data.window === window ? old.data.count + 1 : 1;
     if (count > limit) throw new AppError(429, 'Too many requests. Please try again later.');
@@ -34,9 +37,10 @@ export async function rateLimit(key: string, limit: number, seconds: number) {
       return;
     } catch (e) {
       if (!(e instanceof AppError) || e.status !== 409) throw e;
+      await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (5 * 2 ** attempt))));
     }
   }
-  throw new AppError(429, 'Too many concurrent requests. Please retry.');
+  throw new AppError(429, 'Too many requests. Please try again later.');
 }
 export async function readJson(request: Request, limit = 3000000) {
   if (request.headers.get('content-type')?.split(';')[0].trim() !== 'application/json')

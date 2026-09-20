@@ -11,6 +11,7 @@ export interface Repository {
   organizationId: string;
   snapshot(): Promise<Data>;
   mutate<T>(actor: Actor, action: string, entityId: string, change: (data: Data) => T, requestId?: string): Promise<T>;
+  appendAudit(actor: Actor, action: string, entityId: string): Promise<void>;
   saveDocument(evidence: Evidence, bytes: Buffer): Promise<void>;
   document(id: string): Promise<Buffer>;
   documentUrl(id: string): Promise<string | undefined>;
@@ -50,6 +51,43 @@ export class TenantRepository implements Repository {
   async snapshot() {
     return (await this.load()).data;
   }
+  /**
+   * Append-only audit write for events that change nothing in the knowledge graph (sign-in, profile,
+   * password). It writes one new row and never touches META, so signing in cannot lose a race with a
+   * concurrent knowledge review the way a full mutate() did.
+   */
+  async appendAudit(actor: Actor, action: string, entityId: string) {
+    if (actor.organizationId !== this.organizationId) throw new AppError(403, 'Organization mismatch.');
+    const audit: AuditEvent = {
+      id: randomUUID(),
+      organizationId: this.organizationId,
+      actorId: actor.id,
+      actorName: actor.name,
+      action,
+      entityType: action.split('.')[0],
+      entityId,
+      before: { cards: [], reviews: [] },
+      after: { cards: [], reviews: [] },
+      timestamp: new Date().toISOString(),
+      requestId: actor.requestId,
+    };
+    await this.db.write([
+      {
+        row: { pk: this.pk, sk: `AUDIT#${audit.id}`, organizationId: this.organizationId, revision: 0, data: audit },
+        expected: -1,
+      },
+    ]);
+    console.info(
+      JSON.stringify({
+        event: action,
+        requestId: actor.requestId,
+        organizationId: actor.organizationId,
+        entityId,
+        actorId: actor.id,
+        timestamp: audit.timestamp,
+      }),
+    );
+  }
   async mutate<T>(actor: Actor, action: string, entityId: string, change: (data: Data) => T) {
     if (actor.organizationId !== this.organizationId) throw new AppError(403, 'Organization mismatch.');
     const { data, rows } = await this.load();
@@ -69,36 +107,33 @@ export class TenantRepository implements Repository {
       requestId: actor.requestId,
     };
     const changedCards = data.cards.filter(c => JSON.stringify(c) !== JSON.stringify(before.cards.find(old => old.id === c.id)));
-    audit.before = changedCards.map(c => {
-      const old = before.cards.find(o => o.id === c.id);
-      return old ? { id: old.id, version: old.version, status: old.status } : null;
-    });
-    audit.after = changedCards.map(c => ({ id: c.id, version: c.version, status: c.status }));
     const changedReviews = data.reviews.filter(
       r => JSON.stringify(r) !== JSON.stringify(before.reviews.find(old => old.id === r.id)),
     );
-    if (changedReviews.length) {
-      audit.before = {
-        cards: audit.before,
-        reviews: changedReviews.map(r => {
-          const old = before.reviews.find(o => o.id === r.id);
-          return old ? { id: old.id, status: old.status, decision: old.decision, assignedTo: old.assignedTo } : null;
-        }),
-      };
-      audit.after = {
-        cards: audit.after,
-        reviews: changedReviews.map(r => ({
-          id: r.id,
-          status: r.status,
-          decision: r.decision,
-          reviewer: r.reviewer,
-          reason: r.note,
-          assignedTo: r.assignedTo,
-          snoozedUntil: r.snoozedUntil,
-          evidenceRequested: r.evidenceRequested,
-        })),
-      };
-    }
+    // One shape always: { cards, reviews }. Exporters and compliance readers must not branch on it.
+    audit.before = {
+      cards: changedCards.map(c => {
+        const old = before.cards.find(o => o.id === c.id);
+        return old ? { id: old.id, version: old.version, status: old.status } : null;
+      }),
+      reviews: changedReviews.map(r => {
+        const old = before.reviews.find(o => o.id === r.id);
+        return old ? { id: old.id, status: old.status, decision: old.decision, assignedTo: old.assignedTo } : null;
+      }),
+    };
+    audit.after = {
+      cards: changedCards.map(c => ({ id: c.id, version: c.version, status: c.status })),
+      reviews: changedReviews.map(r => ({
+        id: r.id,
+        status: r.status,
+        decision: r.decision,
+        reviewer: r.reviewer,
+        reason: r.note,
+        assignedTo: r.assignedTo,
+        snoozedUntil: r.snoozedUntil,
+        evidenceRequested: r.evidenceRequested,
+      })),
+    };
     data.audit.push(audit);
     const writes: Write[] = [];
     const meta = rows.find(r => r.sk === 'META');

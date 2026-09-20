@@ -7,7 +7,7 @@ import { AppError } from '@/lib/errors';
 import { requireActor } from '@/lib/auth/session';
 import { checkOrigin, readJson, rateLimit } from '@/lib/auth/security';
 import { account, publicUser, organization, members } from '@/lib/auth/accounts';
-import { organizationAction } from '@/lib/services/organization';
+import { organizationAction } from '@/lib/service/organization';
 import { can } from '@/lib/auth/rbac';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

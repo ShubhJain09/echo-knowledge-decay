@@ -55,19 +55,23 @@ Ask Echo intentionally quotes retrieved verified statements rather than generati
 ```sh
 npm ci
 npm run db:setup
+npm run format:check
 npm run typecheck
 npm test
 npm run check:infra
+npm run eval
 npm run build
-npx playwright install chromium
+npx playwright install --with-deps chromium
 # Keep the local development server running on 3001, with local mail enabled.
 npm run test:e2e
+# Same flow over HTTP, when a browser or its system libraries are unavailable.
+npm run smoke
 npm run eval
 ```
 
-Tests cover quote/citation validation, RBAC, tenant isolation, freshness, idempotency, real SQLite transactions, concurrent approvals, rollback, persisted review decisions, account invites and rate limits. Browser tests exercise signup through the current cited answer and capture desktop/mobile screenshots. AWS commands are validated by CDK synthesis and mocked adapter assertions, not live cloud requests.
+Tests cover change detection itself (genuine change, rewording, contradiction, unrelated evidence, exact quoting), quote/citation validation, RBAC, tenant isolation, freshness, idempotency, real SQLite transactions, concurrent approvals, rollback, persisted review decisions, account invites and rate limits. Browser tests exercise signup through the current cited answer and capture desktop/mobile screenshots; `npm run smoke` drives the same path over HTTP when a browser is unavailable. AWS commands are validated by CDK synthesis and mocked adapter assertions, not live cloud requests.
 
-`npm run eval` is a transparent rule-based smoke test across all eight relation labels. `npm run eval -- --live` calls the configured model and measures classification accuracy and review precision/recall. The tiny dataset is not a production benchmark.
+`npm run eval` is a transparent rule-based smoke test across all eight relation labels. It prints each label and exits non-zero on any mislabelled case, because aggregate review precision and recall stay at 1.0 even when a real change is detected under the wrong label. `npm run eval -- --live` calls the configured model and measures classification accuracy and review precision/recall. The tiny dataset is not a production benchmark.
 
 ## Architecture
 
@@ -87,6 +91,28 @@ flowchart TD
 
 Production: Amplify/CloudFront → Next.js server → IAM-signed API Gateway → Lambda → tenant-scoped DynamoDB/S3. The Next.js server forwards an encrypted Auth.js session; Lambda verifies it and re-reads the user membership rather than trusting a tenant in the body. Cognito handles production identity and managed MFA/passkeys when configured. See [AWS deployment](docs/AWS_DEPLOYMENT.md).
 
+## Code layout
+
+```
+app/                Next.js routes. app/api/[...path] authenticates, then delegates to lib/service.
+lib/service/        The knowledge API, one module per resource, behind a single route table.
+  index.ts            dispatch() — route table shared by the Next.js route and the Lambda handler
+  knowledge.ts        create a card, seed the example, roll back to an earlier version
+  evidence.ts         ingest a document, download the original, compare it to a card
+  reviews.ts          the human decision, and assignment / snooze / evidence requests
+  workspace.ts        tenant snapshot, manual freshness sweep, Ask Echo
+  organization.ts     invitations, roles, organization settings
+  shared.ts           ApiResult, RouteContext, the comparison idempotency key
+lib/intelligence.ts Relation rules and passage extraction; lib/ai/* is the live model contract.
+lib/repository.ts   Tenant-scoped reads and the conditional transaction every knowledge write uses.
+lib/db/store.ts     One row shape over SQLite (local) and DynamoDB (AWS).
+lib/auth/           Sessions, RBAC matrix, password hashing, origin checks, rate limits.
+backend/handler.ts  The same dispatch() behind API Gateway.
+infra/              CDK stack, synthesised and asserted in tests; never deployed here.
+```
+
+Run `npm run format` before committing; CI runs `npm run format:check`.
+
 ## Roles
 
 | Role     | Read | Submit evidence | Create verified card | Decide / rollback | Audit | Admin |
@@ -103,7 +129,7 @@ Editors can submit evidence but cannot declare it canonical. Role changes revoke
 ## Important boundaries
 
 - AI proposes; humans verify. No guarantee of organizational truth.
-- Local demo rules are not semantic AI. Integration tiles are marked planned.
+- Local demo rules are lexical, not semantic AI. They cover rewording, contradiction (reversed conditions and changed figures), schedule changes, version deprecation, hosting migration and manual-to-automated process changes. Anything they cannot resolve becomes `adds_context` for a human, never a silent pass. Integration tiles are marked planned.
 - Evidence is deduplicated per organization/card pair; the same source can be compared to different cards.
 - Review transactions fail on concurrent writes and preserve the previous state. Refresh and retry; no silent overwrite.
 - Tenant-wide optimistic revision guards prioritize correctness over write throughput. Production-scale pagination and contention testing remain work.

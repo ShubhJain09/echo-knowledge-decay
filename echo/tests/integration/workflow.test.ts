@@ -256,3 +256,30 @@ function pdfFixture() {
     .join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
   return Buffer.from(content);
 }
+
+it('every audit record carries the same { cards, reviews } shape', async () => {
+  const r = await review();
+  await call('POST', `reviews/${r.id}/decision`, { decision: 'update', expectedVersion: 1, note: 'Reviewed', statement: update });
+  const { audit } = await repo.snapshot();
+  expect(audit.length).toBeGreaterThan(1);
+  for (const event of audit) {
+    expect(event.before).toHaveProperty('cards');
+    expect(event.before).toHaveProperty('reviews');
+    expect(event.after).toHaveProperty('cards');
+    expect(event.after).toHaveProperty('reviews');
+  }
+  const decision = audit.find(e => e.action === 'review.update')!;
+  expect((decision.after as { reviews: { decision: string }[] }).reviews[0].decision).toBe('update');
+});
+
+it('identity audit writes do not contend with a concurrent knowledge review', async () => {
+  const r = await review();
+  const results = await Promise.allSettled([
+    repo.appendAudit(actor, 'auth.login', actor.id),
+    call('POST', `reviews/${r.id}/decision`, { decision: 'update', expectedVersion: 1, note: 'Reviewed', statement: update }),
+  ]);
+  expect(results.map(x => x.status)).toEqual(['fulfilled', 'fulfilled']);
+  const data = await repo.snapshot();
+  expect(data.audit.some(e => e.action === 'auth.login')).toBe(true);
+  expect(data.cards.find(c => c.id === r.cardId)?.version).toBe(2);
+});

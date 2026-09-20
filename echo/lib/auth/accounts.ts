@@ -11,9 +11,10 @@ export function passwordHash(password: string) {
   const salt = randomBytes(16).toString('hex');
   return `${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
 }
+// A non-hex stored hash must fail closed: Buffer.from() would silently truncate and timingSafeEqual would throw.
 export function verifyPassword(password: string, encoded: string) {
   const [salt, expected] = encoded.split(':');
-  if (!salt || !expected || expected.length !== 128) return false;
+  if (!salt || !/^[0-9a-f]{128}$/i.test(expected || '')) return false;
   const actual = scryptSync(password, salt, 64);
   return timingSafeEqual(actual, Buffer.from(expected, 'hex'));
 }
@@ -116,5 +117,5 @@ export async function auditAccount(user: User, action: string) {
     organizationId: user.organizationId,
     requestId: randomUUID(),
   };
-  await repository(user.organizationId).mutate(actor, action, user.id, () => {});
+  await repository(user.organizationId).appendAudit(actor, action, user.id);
 }

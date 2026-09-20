@@ -5,7 +5,7 @@ import path from 'node:path';
 import { store, SqliteStore } from '../../lib/db/store';
 import { account, createAccount, passwordHash, verifyPassword, saveUser, members } from '../../lib/auth/accounts';
 import { rateLimit } from '../../lib/auth/security';
-import { organizationAction } from '../../lib/services/organization';
+import { organizationAction } from '../../lib/service/organization';
 import type { Actor } from '../../lib/auth/rbac';
 let root: string;
 let db: SqliteStore;

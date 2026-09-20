@@ -19,7 +19,8 @@
     "cdk": "cdk --app \"node --import tsx infra/app.ts\"",
     "eval": "node --import tsx scripts/eval.ts",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.800.0",
