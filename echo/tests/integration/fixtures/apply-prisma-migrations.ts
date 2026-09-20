@@ -1,8 +1,14 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 export async function applyPrismaMigrations(databaseFile: string) {
+  try {
+    await stat(databaseFile);
+    throw new Error(`applyPrismaMigrations requires a fresh database file: ${databaseFile}`);
+  } catch (error) {
+    if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error;
+  }
   const migrationsDir = path.join(process.cwd(), 'prisma', 'migrations');
   const entries = (await readdir(migrationsDir, { withFileTypes: true }))
     .filter(entry => entry.isDirectory())
