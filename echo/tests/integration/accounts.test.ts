@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, it, expect } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { store, SqliteStore } from '../../lib/db/store';
@@ -15,9 +15,12 @@ beforeAll(async () => {
   process.env.ECHO_STORAGE = 'sqlite';
   process.env.ECHO_LOCAL_MAIL = 'true';
   db = store() as SqliteStore;
-  await db.db.$executeRawUnsafe(
-    'CREATE TABLE "Record" ("pk" TEXT NOT NULL,"sk" TEXT NOT NULL,"organizationId" TEXT NOT NULL,"revision" INTEGER NOT NULL,"data" TEXT NOT NULL,PRIMARY KEY ("pk","sk"))',
-  );
+  const migration = await readFile(path.join(process.cwd(), 'prisma/migrations/20260920000000_initial/migration.sql'), 'utf8');
+  for (const statement of migration
+    .split(';')
+    .map(sql => sql.trim())
+    .filter(Boolean))
+    await db.db.$executeRawUnsafe(statement);
 });
 afterAll(async () => {
   await db.db.$disconnect();
