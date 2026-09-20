@@ -2,6 +2,7 @@ import { beforeAll, afterAll, it, expect } from 'vitest';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { store, SqliteStore } from '../../lib/db/store';
 import { account, createAccount, passwordHash, verifyPassword, saveUser, members } from '../../lib/auth/accounts';
 import { rateLimit } from '../../lib/auth/security';
@@ -14,13 +15,11 @@ beforeAll(async () => {
   process.env.DATABASE_URL = `file:${root}/auth.db`;
   process.env.ECHO_STORAGE = 'sqlite';
   process.env.ECHO_LOCAL_MAIL = 'true';
-  db = store() as SqliteStore;
   const migration = await readFile(path.join(process.cwd(), 'prisma/migrations/20260920000000_initial/migration.sql'), 'utf8');
-  for (const statement of migration
-    .split(';')
-    .map(sql => sql.trim())
-    .filter(Boolean))
-    await db.db.$executeRawUnsafe(statement);
+  const sqlite = new DatabaseSync(path.join(root, 'auth.db'));
+  sqlite.exec(migration);
+  sqlite.close();
+  db = store() as SqliteStore;
 });
 afterAll(async () => {
   await db.db.$disconnect();
