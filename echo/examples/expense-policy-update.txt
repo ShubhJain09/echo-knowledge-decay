@@ -1,0 +1,3 @@
+Expense policy update
+
+All expense requests are now submitted through the employee portal. The portal routes requests to HR for approval. Do not email expense forms to HR.

@@ -1,0 +1,16 @@
+import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { parseDocument } from 'yaml';
+const customTags = ['Ref', 'Sub', 'GetAtt'].map(name => ({ tag: `!${name}`, resolve: value => value }));
+const template = parseDocument(readFileSync('infra/template.yaml', 'utf8'), { customTags });
+assert.equal(template.errors.length, 0, template.errors.map(e => e.message).join('\n'));
+const cloud = template.toJS();
+assert.equal(cloud.Transform, 'AWS::Serverless-2016-10-31');
+assert.equal(cloud.Resources.KnowledgeApi.Properties.Auth.DefaultAuthorizer, 'AWS_IAM');
+assert.equal(cloud.Resources.EvidenceBucket.Properties.PublicAccessBlockConfiguration.BlockPublicPolicy, true);
+assert.equal(cloud.Resources.KnowledgeFunction.Properties.Environment.Variables.ECHO_AI, 'bedrock');
+const amplify = parseDocument(readFileSync('amplify.yml', 'utf8'));
+assert.equal(amplify.errors.length, 0);
+assert.equal(amplify.toJS().frontend.artifacts.baseDirectory, '.next');
+console.log(`Deployment YAML and key settings checked (${Object.keys(cloud.Resources).length} AWS resources).`);
+console.log('Run sam validate --lint and a live AWS integration test before deployment.');

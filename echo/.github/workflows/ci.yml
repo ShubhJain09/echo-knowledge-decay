@@ -1,0 +1,35 @@
+name: Validate Echo
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: file:./echo.db
+      NEXTAUTH_SECRET: ci-test-secret-not-for-deployment-123456789
+      NEXTAUTH_URL: http://127.0.0.1:3001
+      ECHO_AI: demo
+      ECHO_STORAGE: sqlite
+      ECHO_LOCAL_MAIL: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:setup
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run check:infra
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run dev -- --port 3001 > /tmp/echo-server.log 2>&1 &
+      - run: node scripts/wait-for-server.mjs
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-results
+          path: |
+            test-results/
+            output/screenshots/

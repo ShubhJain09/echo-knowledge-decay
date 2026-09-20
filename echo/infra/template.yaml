@@ -1,0 +1,140 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Echo knowledge decay - IAM-protected API, Lambda, DynamoDB, S3 and Bedrock
+Parameters:
+  BedrockModelId:
+    Type: String
+    Description: Enabled Converse-compatible model ID or inference-profile ID
+    MinLength: 1
+  BedrockResourceArns:
+    Type: CommaDelimitedList
+    Description: Model and/or inference-profile ARNs permitted for InvokeModel (include destination model ARNs for cross-region profiles)
+Resources:
+  KnowledgeTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+  EvidenceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EvidenceBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt EvidenceBucket.Arn
+              - !Sub '${EvidenceBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+  KnowledgeApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      EndpointConfiguration: REGIONAL
+      BinaryMediaTypes:
+        - '*/*'
+      Auth:
+        DefaultAuthorizer: AWS_IAM
+        InvokeRole: NONE
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingBurstLimit: 10
+          ThrottlingRateLimit: 5
+  KnowledgeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: nodejs22.x
+      Handler: index.handler
+      CodeUri: dist/
+      Timeout: 28
+      MemorySize: 1024
+      Environment:
+        Variables:
+          ECHO_STORAGE: aws
+          ECHO_AI: bedrock
+          KNOWLEDGE_TABLE: !Ref KnowledgeTable
+          EVIDENCE_BUCKET: !Ref EvidenceBucket
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Scan
+                - dynamodb:PutItem
+              Resource: !GetAtt KnowledgeTable.Arn
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource: !Sub '${EvidenceBucket.Arn}/*'
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: !Ref BedrockResourceArns
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref KnowledgeApi
+            Path: /{proxy+}
+            Method: ANY
+  FunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${KnowledgeFunction}'
+      RetentionInDays: 14
+  FrontendInvokePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Attach to the Amplify SSR compute role or the local development identity
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: execute-api:Invoke
+            Resource: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${KnowledgeApi}/Prod/*/*'
+Outputs:
+  ApiUrl:
+    Value: !Sub 'https://${KnowledgeApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod'
+  FrontendInvokePolicyArn:
+    Value: !Ref FrontendInvokePolicy
+  KnowledgeTableName:
+    Value: !Ref KnowledgeTable
+  EvidenceBucketName:
+    Value: !Ref EvidenceBucket

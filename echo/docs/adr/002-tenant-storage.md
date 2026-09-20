@@ -1,0 +1,5 @@
+# ADR 002: tenant partition and immutable version records
+
+Accepted. Production data uses partition key `ORG#organizationId` and entity sort keys. Queries never scan the entire table. Cards, reviews, evidence metadata, versions, audit and a tenant revision marker share a partition. A review transaction checks the previously read revisions and writes the card, new immutable version, resolved review and audit event together. The expected business version is independently checked in the service. The next version equals expected + 1.
+
+Prisma/SQLite mirrors partition/sort keys locally. Local and AWS adapters implement conditional write contracts; cross-provider integration tests are still needed against real DynamoDB. Older version content never changes; current/archived status is computed from the card pointer. A separate version row avoids storing all history in one DynamoDB item. Tenant snapshot loads and a shared revision marker simplify correctness but need pagination and contention work before large-scale deployment.

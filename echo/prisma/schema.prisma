@@ -1,0 +1,17 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+// Mirrors the production single-table partition/sort-key model. Zod validates payloads at API boundaries.
+model Record {
+  pk String
+  sk String
+  organizationId String
+  revision Int
+  data String
+  @@id([pk, sk])
+  @@index([organizationId, sk])
+}

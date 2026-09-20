@@ -1,0 +1,5 @@
+Payment deployment update
+
+The payment deployment pipeline now automatically restarts Service X after every successful deployment. Engineers no longer need to restart Service X manually.
+
+If the automated restart fails, follow the incident response runbook.

@@ -1,0 +1,5 @@
+Echo is running locally at http://127.0.0.1:3001/login while the development server is active.
+Create an account, verify it using the local-only helper, then sign in.
+On Overview choose Load example workspace to rehearse the Service X workflow.
+See README.md for restart commands, tests, and the explicit build-status limitations.
+The original Downloads project was not modified. No cloud deployment was performed.

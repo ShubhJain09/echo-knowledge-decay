@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.next-dev/
+.env*
+!.env.example
+.echo-data/
+infra/dist/
+infra/.aws-sam/
+*.tsbuildinfo
+test-results/
+tmp/
+prisma/*.db
+prisma/*.db-journal
+cdk.out/
+playwright-report/
+output/screenshots/
+.local-access*
