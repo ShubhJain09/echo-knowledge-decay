@@ -7,6 +7,7 @@ import { account, createAccount, passwordHash, verifyPassword, saveUser, members
 import { rateLimit } from '../../lib/auth/security';
 import { organizationAction } from '../../lib/service/organization';
 import type { Actor } from '../../lib/auth/rbac';
+import { applyPrismaMigrations } from './fixtures/apply-prisma-migrations';
 let root: string;
 let db: SqliteStore;
 beforeAll(async () => {
@@ -14,10 +15,8 @@ beforeAll(async () => {
   process.env.DATABASE_URL = `file:${root}/auth.db`;
   process.env.ECHO_STORAGE = 'sqlite';
   process.env.ECHO_LOCAL_MAIL = 'true';
+  await applyPrismaMigrations(path.join(root, 'auth.db'));
   db = store() as SqliteStore;
-  await db.db.$executeRawUnsafe(
-    'CREATE TABLE "Record" ("pk" TEXT NOT NULL,"sk" TEXT NOT NULL,"organizationId" TEXT NOT NULL,"revision" INTEGER NOT NULL,"data" TEXT NOT NULL,PRIMARY KEY ("pk","sk"))',
-  );
 });
 afterAll(async () => {
   await db.db.$disconnect();

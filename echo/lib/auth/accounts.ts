@@ -7,6 +7,13 @@ import { repository } from '../repository';
 import type { Actor } from './rbac';
 export const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 const pk = (email: string) => `ACCOUNT#${hash(email.toLowerCase())}`;
+export function localVerificationEnabled() {
+  return (
+    process.env.ECHO_LOCAL_MAIL === 'true' &&
+    process.env.ECHO_STORAGE !== 'aws' &&
+    (process.env.NODE_ENV !== 'production' || process.env.CI === 'true')
+  );
+}
 export function passwordHash(password: string) {
   const salt = randomBytes(16).toString('hex');
   return `${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
@@ -90,8 +97,7 @@ export async function createAccount(input: {
   return { user, code };
 }
 export async function sendVerification(email: string, code: string) {
-  if (process.env.ECHO_LOCAL_MAIL === 'true' && process.env.ECHO_STORAGE !== 'aws' && process.env.NODE_ENV !== 'production')
-    return;
+  if (localVerificationEnabled()) return;
   if (!process.env.EMAIL_FROM)
     throw new AppError(503, 'Email delivery is not configured. An administrator must set EMAIL_FROM or use Cognito signup.');
   const link = `${process.env.NEXTAUTH_URL}/verify?email=${encodeURIComponent(email)}&token=${code}`;
